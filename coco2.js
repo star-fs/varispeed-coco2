@@ -1530,7 +1530,7 @@ function showDiskModal(diskName, files, onSelect) {
   document.body.appendChild(overlay);
 }
 
-function loadDiskDsk(arrayBuffer, fileName) {
+function loadDiskDsk(arrayBuffer, fileName, skipShowModal = false) {
   lastLoadedDiskBuffer = arrayBuffer;
   lastLoadedDiskName = fileName;
   
@@ -1659,76 +1659,78 @@ function loadDiskDsk(arrayBuffer, fileName) {
     }
   }
   
-  showDiskModal(fileName, files, (selectedFile) => {
-    if (selectedFile.type === 0 || selectedFile.type === 3) {
-      if (selectedFile.format === 2) {
-        // ASCII file: load to auto-typer text field
-        let text = "";
-        for (let i = 0; i < selectedFile.bytes.length; i++) {
-          text += String.fromCharCode(selectedFile.bytes[i]);
-        }
-        text = text.replace(/\r\n/g, '\n').replace(/\n/g, '\r');
-        typeTextarea.value = text;
-        console.log(`Loaded ASCII file "${selectedFile.fullName}" to auto-typer.`);
-      } else {
-        // Tokenized binary BASIC: inject directly to RAM at $1E01 and update pointers!
-        const progStart = 0x1E01;
-        for (let i = 0; i < selectedFile.bytes.length; i++) {
-          ram[progStart + i] = selectedFile.bytes[i];
-        }
-        const progEnd = progStart + selectedFile.bytes.length;
-        ram[progEnd] = 0;
-        ram[progEnd + 1] = 0;
-        
-        const finalEnd = progEnd + 2;
-        ram[0x0019] = (finalEnd >> 8) & 0xFF;
-        ram[0x001A] = finalEnd & 0xFF;
-        ram[0x001B] = (finalEnd >> 8) & 0xFF;
-        ram[0x001C] = finalEnd & 0xFF;
-        ram[0x001D] = (finalEnd >> 8) & 0xFF;
-        ram[0x001E] = finalEnd & 0xFF;
-        
-        console.log(`Injected tokenized BASIC program to $1E01-$${finalEnd.toString(16).toUpperCase()}`);
-      }
-    } else if (selectedFile.type === 2) {
-      // Machine Code BIN: parse blocks and write to RAM
-      const fileBytes = selectedFile.bytes;
-      let ptr = 0;
-      let execAddr = 0x0000;
-      let loadedBlocks = [];
-      
-      while (ptr < fileBytes.length) {
-        const flag = fileBytes[ptr];
-        if (flag === 0x00) {
-          if (ptr + 5 > fileBytes.length) break;
-          const length = (fileBytes[ptr + 1] << 8) | fileBytes[ptr + 2];
-          const loadAddr = (fileBytes[ptr + 3] << 8) | fileBytes[ptr + 4];
-          ptr += 5;
-          
-          if (ptr + length > fileBytes.length) break;
-          for (let i = 0; i < length; i++) {
-            ram[loadAddr + i] = fileBytes[ptr + i];
+  if (!skipShowModal) {
+    showDiskModal(fileName, files, (selectedFile) => {
+      if (selectedFile.type === 0 || selectedFile.type === 3) {
+        if (selectedFile.format === 2) {
+          // ASCII file: load to auto-typer text field
+          let text = "";
+          for (let i = 0; i < selectedFile.bytes.length; i++) {
+            text += String.fromCharCode(selectedFile.bytes[i]);
           }
-          loadedBlocks.push({ addr: loadAddr, len: length });
-          ptr += length;
-        } else if (flag === 0xFF) {
-          if (ptr + 5 > fileBytes.length) break;
-          execAddr = (fileBytes[ptr + 3] << 8) | fileBytes[ptr + 4];
-          break;
+          text = text.replace(/\r\n/g, '\n').replace(/\n/g, '\r');
+          typeTextarea.value = text;
+          console.log(`Loaded ASCII file "${selectedFile.fullName}" to auto-typer.`);
         } else {
-          ptr++;
+          // Tokenized binary BASIC: inject directly to RAM at $1E01 and update pointers!
+          const progStart = 0x1E01;
+          for (let i = 0; i < selectedFile.bytes.length; i++) {
+            ram[progStart + i] = selectedFile.bytes[i];
+          }
+          const progEnd = progStart + selectedFile.bytes.length;
+          ram[progEnd] = 0;
+          ram[progEnd + 1] = 0;
+          
+          const finalEnd = progEnd + 2;
+          ram[0x0019] = (finalEnd >> 8) & 0xFF;
+          ram[0x001A] = finalEnd & 0xFF;
+          ram[0x001B] = (finalEnd >> 8) & 0xFF;
+          ram[0x001C] = finalEnd & 0xFF;
+          ram[0x001D] = (finalEnd >> 8) & 0xFF;
+          ram[0x001E] = finalEnd & 0xFF;
+          
+          console.log(`Injected tokenized BASIC program to $1E01-$${finalEnd.toString(16).toUpperCase()}`);
         }
+      } else if (selectedFile.type === 2) {
+        // Machine Code BIN: parse blocks and write to RAM
+        const fileBytes = selectedFile.bytes;
+        let ptr = 0;
+        let execAddr = 0x0000;
+        let loadedBlocks = [];
+        
+        while (ptr < fileBytes.length) {
+          const flag = fileBytes[ptr];
+          if (flag === 0x00) {
+            if (ptr + 5 > fileBytes.length) break;
+            const length = (fileBytes[ptr + 1] << 8) | fileBytes[ptr + 2];
+            const loadAddr = (fileBytes[ptr + 3] << 8) | fileBytes[ptr + 4];
+            ptr += 5;
+            
+            if (ptr + length > fileBytes.length) break;
+            for (let i = 0; i < length; i++) {
+              ram[loadAddr + i] = fileBytes[ptr + i];
+            }
+            loadedBlocks.push({ addr: loadAddr, len: length });
+            ptr += length;
+          } else if (flag === 0xFF) {
+            if (ptr + 5 > fileBytes.length) break;
+            execAddr = (fileBytes[ptr + 3] << 8) | fileBytes[ptr + 4];
+            break;
+          } else {
+            ptr++;
+          }
+        }
+        
+        console.log(`Loaded BIN program "${selectedFile.fullName}". Exec Address: $${execAddr.toString(16).toUpperCase()}`);
+        
+        // Auto-type EXEC command to trigger machine code!
+        typeTextarea.value = `EXEC &H${execAddr.toString(16).toUpperCase()}\r`;
+        startTypeBtn.click();
+      } else {
+        alert(`Unsupported file type on DSK: ${selectedFile.fullName}`);
       }
-      
-      console.log(`Loaded BIN program "${selectedFile.fullName}". Exec Address: $${execAddr.toString(16).toUpperCase()}`);
-      
-      // Auto-type EXEC command to trigger machine code!
-      typeTextarea.value = `EXEC &H${execAddr.toString(16).toUpperCase()}\r`;
-      startTypeBtn.click();
-    } else {
-      alert(`Unsupported file type on DSK: ${selectedFile.fullName}`);
-    }
-  });
+    });
+  }
 }
 
 function ejectDisk() {
@@ -2123,4 +2125,20 @@ window.addEventListener('DOMContentLoaded', () => {
   // Power on automatically on load
   powerOn();
   recalculateTyperTiming();
+
+  // Load 3DWAR.DSK by default on boot
+  fetch('3DWAR.DSK')
+    .then(response => {
+      if (!response.ok) {
+        throw new Error('Failed to fetch 3DWAR.DSK: ' + response.statusText);
+      }
+      return response.arrayBuffer();
+    })
+    .then(buffer => {
+      loadDiskDsk(buffer, '3DWAR.DSK', true);
+      console.log('Successfully preloaded 3DWAR.DSK');
+    })
+    .catch(err => {
+      console.error('Error preloading default disk:', err);
+    });
 });
