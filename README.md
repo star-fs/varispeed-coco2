@@ -4,7 +4,7 @@ An interactive, browser-based emulator for the **Tandy Color Computer 2 (CoCo 2)
 
 Have you ever wanted to play 3D Space Wars and enjoy it?
 
-This was written entirely by Gemini 3.5 Flash (Medium)!  While the project definition, feature set, design and debugging was performed my me and an awful amount of prompting was needed to get it to this state ( ~5 real hours! ), it's still entirely written by Gemini.  Enjoy!
+This was written entirely by Gemini 3.5 Flash (Medium)! While the project definition, feature set, design, and debugging were performed by me and an awful amount of prompting was needed to get it to this state (~5 real hours!), it's still entirely written by Gemini. Enjoy!
 
 ---
 
@@ -26,7 +26,7 @@ This was written entirely by Gemini 3.5 Flash (Medium)!  While the project defin
 
 ### ⌨️ Input & Gamepad Integration
 * **Keyboard Matrix:** Emulates the $8 \times 7$ keyboard scan matrix. Includes an interactive on-screen virtual keyboard.
-* **Auto-Typer:** Dumps text buffers into the matrix. Employs a carriage return carriage delay (~500ms) to give the slow ROM BASIC interpreter time to parse and execute commands. Auto-blurs controls when finished to prevent focus traps.
+* **Auto-Typer:** Dumps text buffers into the matrix. Employs a carriage return delay (~500ms) to give the slow ROM BASIC interpreter time to parse and execute commands. Auto-blurs controls when finished to prevent focus traps.
 * **Gamepad API Support:** Full USB Gamepad mapping:
   * **Left Analog Stick** controls the analog X/Y joystick axes (with deadzone adjustments).
   * **X Button** (or A Button) acts as the Fire button.
@@ -36,6 +36,18 @@ This was written entirely by Gemini 3.5 Flash (Medium)!  While the project defin
 * **High-Resolution Sampling:** Slices CPU execution blocks down to at most 20 cycles, sampling the 6-bit DAC register (`$FF20` bits 2-7) in real-time to avoid aliasing and pitch drop.
 * **Low-Pass Filter (LPF):** A digital first-order IIR filter matching a 4 kHz cutoff frequency, smoothing the DAC's sharp "staircase" steps to emulate warm analog TV speaker output.
 * **High-Pass Filter (HPF):** An AC-coupling filter matching a 70 Hz cutoff frequency, eliminating DC offsets and preventing speaker click pops when turning audio on/off.
+
+---
+
+## 📁 Project Structure
+
+* [package.json](package.json): Project scripts and package configuration.
+* [server.js](server.js): A zero-dependency static node web server to host the application.
+* [index.html](index.html): The main web interface, featuring a retro CRT curved display bezel, register/disassembly debug panels, and control consoles.
+* [index.css](index.css): Custom CSS styles giving a premium glassmorphic dark-theme design, CRT scanline grids, phosphor glow effects, and modeled keyboard caps.
+* [coco2.js](coco2.js): The emulation hub managing RAM/ROM address decoding, MC6847 video output (supporting Text, Semigraphics 4, and PMODE 4 high-res graphics), keyboard matrix strobe scans, and the auto-typer.
+* [roms_b64.js](roms_b64.js): Hex/base64 representation of the original Color BASIC v1.3 and Extended Color BASIC v1.1 ROMs, acting as an offline fallback.
+* [6809.js](6809.js): The Motorola 6809 CPU core emulator. Modified to support active IRQ and NMI vector execution.
 
 ---
 
@@ -58,14 +70,14 @@ This was written entirely by Gemini 3.5 Flash (Medium)!  While the project defin
 * Clicking **Reset** performs a hardware reset, clearing RAM vectors, ejecting any cartridges, and restoring the SAM clock to `895 kHz`.
 
 ### 2. Loading Floppy Disks (`.dsk`)
-1. In the **Virtual Hardware Media Slots** panel, find the **Floppy Disk** slot and click **Choose File**.
+1. In the **Virtual Hardware Media Slots** panel, find the **Floppy Drive 0** slot and click **Insert Disk**.
 2. Select a `.dsk` image.
 3. The UI will instantly display a list of all files stored on the virtual disk.
 4. Click **Load** next to any file in the list. The emulator will automatically parse the file format, inject the bytes into the appropriate memory vectors, and run the load command in RAM.
 5. Click **Eject** next to the slot to clear the buffer.
 
 ### 3. Inserting Cartridges (`.ccc` / `.rom`)
-1. Click **Choose File** next to the **Cartridge** slot.
+1. Click **Insert Pak** next to the **Cartridge Slot**.
 2. Load a cartridge image (e.g., `Dungeons of Daggorath`).
 3. The emulator will instantly load the cartridge into `$C000`–`$FFEF`, reset the CPU, and pulse the `FIRQ` line to autostart the cartridge.
 4. To remove the cartridge and reboot back to BASIC, click the red **Eject** button.
@@ -111,4 +123,3 @@ This emulator's components are designed based on the following technical specifi
 
 ## 📜 License
 This project is open-source and licensed under the MIT License.
-dad@julesbox:~/coco2-emulator$ 
