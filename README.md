@@ -6,7 +6,9 @@ An interactive, browser-based emulator for the **Tandy Color Computer 2 (CoCo 2)
 
 Have you ever wanted to play 3D Space Wars and enjoy it?
 
-This was written entirely by Gemini 3.5 Flash (Medium)! While the project definition, feature set, design, and debugging were performed by me and an awful amount of prompting was needed to get it to this state (~5 real hours!), it's still entirely written by Gemini. Enjoy!
+This was written entirely by Gemini 3.5 Flash (Medium). 
+
+While the project definition, feature set, design, and debugging were performed by me and an awful amount of prompting was needed to get it to this state (~5 real hours), it's still entirely written by Gemini. Enjoy.
 
 ---
 
