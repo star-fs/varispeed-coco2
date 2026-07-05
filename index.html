@@ -176,13 +176,13 @@
         <div class="media-slot">
           <div class="media-header">
             <span class="media-title">💾 Floppy Drive 0</span>
-            <span id="disk-status" class="media-status active">3DWAR.DSK</span>
+            <span id="disk-status" class="media-status">No Disk</span>
           </div>
           <div class="media-actions">
             <input type="file" id="disk-input" accept=".dsk" style="display: none;">
             <button id="btn-insert-disk" class="btn-sm btn-primary">Insert Disk</button>
-            <button id="btn-eject-disk" class="btn-sm btn-danger" style="display: inline-block;">Eject</button>
-            <button id="btn-show-dir" class="btn-sm btn-secondary" style="display: inline-block;">Directory</button>
+            <button id="btn-eject-disk" class="btn-sm btn-danger" style="display: none;">Eject</button>
+            <button id="btn-show-dir" class="btn-sm btn-secondary" style="display: none;">Directory</button>
           </div>
         </div>
         
@@ -210,6 +210,19 @@
             <button id="btn-load-tape" class="btn-sm btn-primary">Load Tape</button>
             <button id="btn-eject-tape" class="btn-sm btn-danger" style="display: none;">Eject</button>
           </div>
+        </div>
+
+        <!-- Retro Game Downloads -->
+        <div class="quick-downloads" style="margin-top: 15px; border-top: 1px solid var(--border-color); padding-top: 15px;">
+          <span style="font-family: var(--font-mono); font-size: 0.8rem; color: var(--text-secondary); display: block; margin-bottom: 8px;">🔗 Retro Game Archives (DSK):</span>
+          <div style="display: flex; flex-direction: column; gap: 8px; font-family: var(--font-mono); font-size: 0.8rem;">
+            <a href="https://colorcomputerarchive.com/repo/Disks/Games/" target="_blank" class="btn-sm btn-secondary" style="text-decoration: none; text-align: center; border: 1px dashed var(--neon-orange); color: var(--neon-orange);">📂 Browse Game Disks Directory</a>
+            <div style="display: flex; gap: 8px;">
+              <a href="https://colorcomputerarchive.com/repo/Disks/Games/3D%20Space%20Wars%20(Newson%20Consultants).zip" target="_blank" class="btn-sm btn-secondary" style="text-decoration: none; flex: 1; text-align: center;">🚀 3D Space Wars</a>
+              <a href="https://colorcomputerarchive.com/repo/Disks/Games/Zaxxon%20(+4%20Trainer)%20(Datasoft).zip" target="_blank" class="btn-sm btn-secondary" style="text-decoration: none; flex: 1; text-align: center;">🛸 Zaxxon</a>
+            </div>
+          </div>
+          <small style="color: var(--text-muted); font-size: 0.7rem; display: block; margin-top: 8px; text-align: center; line-height: 1rem;">Download ZIP, extract the .dsk, and insert it above.</small>
         </div>
       </div>
 

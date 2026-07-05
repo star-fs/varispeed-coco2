@@ -2125,20 +2125,4 @@ window.addEventListener('DOMContentLoaded', () => {
   // Power on automatically on load
   powerOn();
   recalculateTyperTiming();
-
-  // Load 3DWAR.DSK by default on boot
-  fetch('3DWAR.DSK')
-    .then(response => {
-      if (!response.ok) {
-        throw new Error('Failed to fetch 3DWAR.DSK: ' + response.statusText);
-      }
-      return response.arrayBuffer();
-    })
-    .then(buffer => {
-      loadDiskDsk(buffer, '3DWAR.DSK', true);
-      console.log('Successfully preloaded 3DWAR.DSK');
-    })
-    .catch(err => {
-      console.error('Error preloading default disk:', err);
-    });
 });
