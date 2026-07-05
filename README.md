@@ -2,6 +2,8 @@
 
 An interactive, browser-based emulator for the **Tandy Color Computer 2 (CoCo 2)**. Built with HTML5, CSS3, and JavaScript, this project brings the Motorola 6809 microprocessor and the CoCo's unique support chips (SAM, PIA, VDG) to the web with real-time hardware diagnostics, audio conditioning, and gamepad mapping.
 
+Have you ever wanted to play 3D Space Wars and enjoy it?
+
 This was written entirely by Gemini 3.5 Flash (Medium)!  While the project definition, feature set, design and debugging was performed my me and an awful amount of prompting was needed to get it to this state ( ~5 real hours! ), it's still entirely written by Gemini.  Enjoy!
 
 ---
