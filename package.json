@@ -1,0 +1,11 @@
+{
+  "name": "coco2-emulator",
+  "version": "1.0.0",
+  "description": "Tandy Color Computer 2 HTML5 Emulator",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js"
+  },
+  "author": "Antigravity",
+  "license": "MIT"
+}

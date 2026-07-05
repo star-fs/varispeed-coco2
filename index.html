@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<!-- saved from url=(0022)http://localhost:8080/ -->
+<html lang="en"><head><meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+  
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Tandy Color Computer 2 Emulator</title>
+  <meta name="description" content="A premium client-side HTML5 emulator for the Tandy Color Computer 2 with variable CPU speed controls and simulated auto-typing text loader.">
+  <link rel="stylesheet" href="index.css">
+  <!-- Google Fonts for Retro Digital look -->
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Press+Start+2P&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+</head>
+<body>
+
+  <header class="app-header">
+    <div class="header-logo">
+      <span class="brand">TRS-80</span>
+      <span class="model">color computer 2</span>
+      <span class="decorator">|</span>
+      <span class="sub-brand">HTML5 Emulator</span>
+    </div>
+    <div class="system-status">
+      <span class="status-item">
+        <span class="label">CPU Speed:</span>
+        <span id="cpu-speed-value" class="val">1.79 MHz (Fast Mode)</span>
+      </span>
+      <span class="status-item">
+        <span class="label">SAM Clock Mode:</span>
+        <span id="hardware-speed-mode" class="val">1.79 MHz (Fast)</span>
+      </span>
+      <span class="status-item">
+        <span class="label">ROM:</span>
+        <span class="val" style="color: var(--neon-orange);">Extended Color BASIC 1.1</span>
+      </span>
+    </div>
+  </header>
+
+  <main class="app-container">
+    
+    <!-- Left Section: CRT Screen & Physical Controls -->
+    <section class="left-section">
+      <!-- CRT Monitor Bezel -->
+      <div class="crt-case">
+        <div class="crt-screen-bezel">
+          <div class="crt-screen-container">
+            <!-- Actual Emulator Canvas (Scaled to 256x192) -->
+            <canvas id="coco-screen" width="256" height="192"></canvas>
+            <div class="scanlines"></div>
+            <div class="phosphor-glow"></div>
+            <div class="screen-glare"></div>
+          </div>
+        </div>
+        
+        <!-- CRT Monitor Controls Bar -->
+        <div class="crt-controls">
+          <div class="power-control">
+            <button id="btn-power" class="btn-power-switch" title="Toggle System Power">
+              <span class="icon">⏻</span> Power
+            </button>
+            <div class="led-container">
+              <span id="power-led" class="led on"></span>
+              <span class="led-label">PWR</span>
+            </div>
+          </div>
+          
+          <div class="badge-tandy">TANDY</div>
+          
+          <div class="action-buttons">
+            <button id="btn-reset" class="btn-action red-btn" title="Reset CPU/System">RESET</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Virtual Keyboard Layout (Physical Color Computer 2 layout) -->
+      <div class="virtual-keyboard">
+        <!-- Row 1 -->
+        <div class="keyboard-row">
+          <button class="key key-special" id="key-break" onclick="handleVirtualKeyClick(&#39;break&#39;)">BREAK</button>
+          <button class="key" id="key-1" onclick="handleVirtualKeyClick(&#39;1&#39;)">1<br>!</button>
+          <button class="key" id="key-2" onclick="handleVirtualKeyClick(&#39;2&#39;)">2<br>"</button>
+          <button class="key" id="key-3" onclick="handleVirtualKeyClick(&#39;3&#39;)">3<br>#</button>
+          <button class="key" id="key-4" onclick="handleVirtualKeyClick(&#39;4&#39;)">4<br>$</button>
+          <button class="key" id="key-5" onclick="handleVirtualKeyClick(&#39;5&#39;)">5<br>%</button>
+          <button class="key" id="key-6" onclick="handleVirtualKeyClick(&#39;6&#39;)">6<br>&amp;</button>
+          <button class="key" id="key-7" onclick="handleVirtualKeyClick(&#39;7&#39;)">7<br>'</button>
+          <button class="key" id="key-8" onclick="handleVirtualKeyClick(&#39;8&#39;)">8<br>(</button>
+          <button class="key" id="key-9" onclick="handleVirtualKeyClick(&#39;9&#39;)">9<br>)</button>
+          <button class="key" id="key-0" onclick="handleVirtualKeyClick(&#39;0&#39;)">0</button>
+          <button class="key" id="key-:" onclick="handleVirtualKeyClick(&#39;:&#39;)">:<br>*</button>
+          <button class="key" id="key-;" onclick="handleVirtualKeyClick(&#39;;&#39;)">;<br>+</button>
+          <button class="key" id="key--" onclick="handleVirtualKeyClick(&#39;-&#39;)">-<br>=</button>
+        </div>
+        <!-- Row 2 -->
+        <div class="keyboard-row">
+          <button class="key key-special" id="key-clear" onclick="handleVirtualKeyClick(&#39;clear&#39;)">CLEAR</button>
+          <button class="key" id="key-q" onclick="handleVirtualKeyClick(&#39;q&#39;)">Q</button>
+          <button class="key" id="key-w" onclick="handleVirtualKeyClick(&#39;w&#39;)">W</button>
+          <button class="key" id="key-e" onclick="handleVirtualKeyClick(&#39;e&#39;)">E</button>
+          <button class="key" id="key-r" onclick="handleVirtualKeyClick(&#39;r&#39;)">R</button>
+          <button class="key" id="key-t" onclick="handleVirtualKeyClick(&#39;t&#39;)">T</button>
+          <button class="key" id="key-y" onclick="handleVirtualKeyClick(&#39;y&#39;)">Y</button>
+          <button class="key" id="key-u" onclick="handleVirtualKeyClick(&#39;u&#39;)">U</button>
+          <button class="key" id="key-i" onclick="handleVirtualKeyClick(&#39;i&#39;)">I</button>
+          <button class="key" id="key-o" onclick="handleVirtualKeyClick(&#39;o&#39;)">O</button>
+          <button class="key" id="key-p" onclick="handleVirtualKeyClick(&#39;p&#39;)">P</button>
+          <button class="key" id="key-@" onclick="handleVirtualKeyClick(&#39;@&#39;)">@</button>
+          <button class="key" id="key-arrowup" onclick="handleVirtualKeyClick(&#39;arrowup&#39;)">▲</button>
+          <button class="key key-double" id="key-enter" onclick="handleVirtualKeyClick(&#39;enter&#39;)">ENTER</button>
+        </div>
+        <!-- Row 3 -->
+        <div class="keyboard-row">
+          <button class="key key-special" id="key-control" onclick="handleVirtualKeyClick(&#39;control&#39;)">CTRL</button>
+          <button class="key" id="key-a" onclick="handleVirtualKeyClick(&#39;a&#39;)">A</button>
+          <button class="key" id="key-s" onclick="handleVirtualKeyClick(&#39;s&#39;)">S</button>
+          <button class="key" id="key-d" onclick="handleVirtualKeyClick(&#39;d&#39;)">D</button>
+          <button class="key" id="key-f" onclick="handleVirtualKeyClick(&#39;f&#39;)">F</button>
+          <button class="key" id="key-g" onclick="handleVirtualKeyClick(&#39;g&#39;)">G</button>
+          <button class="key" id="key-h" onclick="handleVirtualKeyClick(&#39;h&#39;)">H</button>
+          <button class="key" id="key-j" onclick="handleVirtualKeyClick(&#39;j&#39;)">J</button>
+          <button class="key" id="key-k" onclick="handleVirtualKeyClick(&#39;k&#39;)">K</button>
+          <button class="key" id="key-l" onclick="handleVirtualKeyClick(&#39;l&#39;)">L</button>
+          <button class="key" id="key-," onclick="handleVirtualKeyClick(&#39;,&#39;)">,<br>&lt;</button>
+          <button class="key" id="key-." onclick="handleVirtualKeyClick(&#39;.&#39;)">.<br>&gt;</button>
+          <button class="key" id="key-/" onclick="handleVirtualKeyClick(&#39;/&#39;)">/<br>?</button>
+          <button class="key" id="key-arrowdown" onclick="handleVirtualKeyClick(&#39;arrowdown&#39;)">▼</button>
+        </div>
+        <!-- Row 4 -->
+        <div class="keyboard-row">
+          <button class="key key-double key-special" id="key-shift" onclick="handleVirtualKeyClick(&#39;shift&#39;)">SHIFT</button>
+          <button class="key" id="key-z" onclick="handleVirtualKeyClick(&#39;z&#39;)">Z</button>
+          <button class="key" id="key-x" onclick="handleVirtualKeyClick(&#39;x&#39;)">X</button>
+          <button class="key" id="key-c" onclick="handleVirtualKeyClick(&#39;c&#39;)">C</button>
+          <button class="key" id="key-v" onclick="handleVirtualKeyClick(&#39;v&#39;)">V</button>
+          <button class="key" id="key-b" onclick="handleVirtualKeyClick(&#39;b&#39;)">B</button>
+          <button class="key" id="key-n" onclick="handleVirtualKeyClick(&#39;n&#39;)">N</button>
+          <button class="key" id="key-m" onclick="handleVirtualKeyClick(&#39;m&#39;)">M</button>
+          <button class="key" id="key-arrowleft" onclick="handleVirtualKeyClick(&#39;arrowleft&#39;)">◀</button>
+          <button class="key" id="key-arrowright" onclick="handleVirtualKeyClick(&#39;arrowright&#39;)">▶</button>
+          <button class="key key-space" id="key- " onclick="handleVirtualKeyClick(&#39; &#39;)">SPACE</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Right Section: File Uploader, Speed Slider, CPU Monitor -->
+    <section class="right-section">
+      
+      <!-- System Speed Controls -->
+      <div class="control-panel panel-glass">
+        <h3>System Speed Control</h3>
+        <div class="slider-container">
+          <input type="range" id="cpu-speed-slider" min="0" max="7" value="4">
+          <div class="slider-labels">
+            <span>Slow</span>
+            <span>Native</span>
+            <span>10 MHz</span>
+          </div>
+        </div>
+        <div class="preset-buttons">
+          <button id="btn-speed-native" class="btn-sm">895 kHz (Original)</button>
+          <button id="btn-speed-turbo" class="btn-sm">4.0 MHz (Turbo)</button>
+          <button id="btn-speed-max" class="btn-sm">10.0 MHz (Max)</button>
+        </div>
+        <div class="preset-buttons" style="margin-top: 10px; display: flex; gap: 8px;">
+          <button id="btn-ntsc-mode" class="btn-primary btn-sm" style="flex: 2; white-space: nowrap;">📺 NTSC: Phase 1</button>
+          <button id="btn-audio-toggle" class="btn-primary btn-sm" style="flex: 1; white-space: nowrap;">🔊 Mute</button>
+        </div>
+      </div>
+
+      <!-- Virtual Hardware Slots -->
+      <div class="control-panel panel-glass">
+        <h3>Virtual Hardware Slots</h3>
+        <p class="panel-desc">Insert media into the virtual machine's peripheral ports.</p>
+        
+        <!-- Floppy Drive Slot -->
+        <div class="media-slot">
+          <div class="media-header">
+            <span class="media-title">💾 Floppy Drive 0</span>
+            <span id="disk-status" class="media-status active">3DWAR.DSK</span>
+          </div>
+          <div class="media-actions">
+            <input type="file" id="disk-input" accept=".dsk" style="display: none;">
+            <button id="btn-insert-disk" class="btn-sm btn-primary">Insert Disk</button>
+            <button id="btn-eject-disk" class="btn-sm btn-danger" style="display: inline-block;">Eject</button>
+            <button id="btn-show-dir" class="btn-sm btn-secondary" style="display: inline-block;">Directory</button>
+          </div>
+        </div>
+        
+        <!-- Cartridge Slot -->
+        <div class="media-slot" style="margin-top: 12px;">
+          <div class="media-header">
+            <span class="media-title">🎮 Cartridge Slot</span>
+            <span id="cart-status" class="media-status">Empty</span>
+          </div>
+          <div class="media-actions">
+            <input type="file" id="cart-input" accept=".ccc,.rom" style="display: none;">
+            <button id="btn-insert-cart" class="btn-sm btn-primary">Insert Pak</button>
+            <button id="btn-eject-cart" class="btn-sm btn-danger" style="display: none;">Eject</button>
+          </div>
+        </div>
+        
+        <!-- Cassette Tape Slot -->
+        <div class="media-slot" style="margin-top: 12px;">
+          <div class="media-header">
+            <span class="media-title">📼 Cassette Recorder</span>
+            <span id="tape-status" class="media-status">No Tape</span>
+          </div>
+          <div class="media-actions">
+            <input type="file" id="tape-input" accept=".wav" style="display: none;">
+            <button id="btn-load-tape" class="btn-sm btn-primary">Load Tape</button>
+            <button id="btn-eject-tape" class="btn-sm btn-danger" style="display: none;">Eject</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- Auto-Typer Panel -->
+      <div class="control-panel panel-glass">
+        <h3>Auto-Typer</h3>
+        <p class="panel-desc">Paste code. The loader simulates keys as if you typed them physically.</p>
+        
+        <textarea id="typer-text" placeholder="10 PRINT &quot;TANDY COCO 2&quot;
+20 FOR I = 1 TO 10
+30 PRINT I;
+40 NEXT I
+50 GOTO 10"></textarea>
+        
+        <div class="typer-controls">
+          <div class="typer-speed-container">
+            <label for="typer-speed">Speed:</label>
+            <input type="range" id="typer-speed" min="2" max="60" value="15">
+            <span id="typer-speed-value">15 char/sec</span>
+          </div>
+          <div class="typer-buttons">
+            <button id="btn-start-typing" class="btn-primary">⚡ Start Typing</button>
+            <button id="btn-clear-typer" class="btn-secondary">Clear</button>
+          </div>
+        </div>
+
+        <div class="progress-container">
+          <div id="typer-progress-bar" class="progress-bar" style="width: 0%;"></div>
+        </div>
+      </div>
+
+    </section>
+
+    <!-- Debug Panels Row -->
+    <div class="debug-container">
+      <div class="debug-top-row">
+        <!-- CPU Debug & Register Monitor -->
+        <div class="control-panel panel-glass">
+          <h3>6809 CPU Register Status</h3>
+          <pre id="debug-regs" class="mono-code">
+PC: <span class="val">$2C51</span>   SP: <span class="val">$7F2F</span>   U:  <span class="val">$FF05</span>
+A:  <span class="val">$1E</span>    B:  <span class="val">$37</span>    X:  <span class="val">$2501</span>
+Y:  <span class="val">$2603</span>    DP: <span class="val">$25</span>   CC: <span class="val">%10000000</span> (Efhinzvc)
+  </pre>
+        </div>
+
+        <!-- Current Instruction Disassembler -->
+        <div class="control-panel panel-glass">
+          <h3>Active Disassembly</h3>
+          <div id="debug-disasm" class="mono-code">
+<div class="line active">
+  <span class="addr">$2C51:</span>
+  <span class="bytes">C4 3F      </span>
+  <span class="mnem">ANDB #$3F</span>
+</div>
+  </div>
+        </div>
+      </div>
+
+      <!-- Memory Hex Explorer -->
+      <div class="control-panel panel-glass">
+        <div class="panel-header-inline">
+          <h3>Memory Hex Viewer</h3>
+          <div class="hex-input-wrapper">
+            <label for="mem-start-addr">Start Addr:</label>
+            <input type="text" id="mem-start-addr" value="0400" placeholder="0400">
+          </div>
+        </div>
+        <pre id="debug-mem-hex" class="mono-code"><span class="addr">$0400:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0410:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0420:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0430:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0440:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0450:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0460:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0470:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0480:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0490:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$04A0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$04B0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$04C0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$04D0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$04E0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$04F0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0500:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0510:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0520:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0530:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0540:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0550:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0560:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0570:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0580:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$0590:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$05A0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$05B0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$05C0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$05D0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$05E0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+<span class="addr">$05F0:</span> <span class="bytes">80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 80 </span> <span class="ascii">................</span>
+</pre>
+      </div>
+    </div>
+
+  </main>
+
+  <footer class="app-footer">
+    <p>Tandy Color Computer 2 Emulator. Press keys on your physical keyboard to type directly. To break execution, press Esc. Screen RAM starts at $0400.</p>
+  </footer>
+
+  <script src="6809.js"></script>
+  <script src="roms_b64.js"></script>
+  <script src="coco2.js"></script>
+
+
+</body></html>
