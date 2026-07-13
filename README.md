@@ -11,6 +11,7 @@ This was written entirely by Gemini 3.5 Flash (Medium).
 While the project definition, feature set, design, and debugging were performed by me and an awful amount of prompting was needed to get it to this state (~5 real hours), it's still entirely written by Gemini. Enjoy.
 
 Play Online live from this repository: https://star-fs.github.io/varispeed-coco2/  
+
 ---
 
 ## 🚀 Capabilities & Features
