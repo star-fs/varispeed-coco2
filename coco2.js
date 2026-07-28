@@ -21,32 +21,55 @@ let cpuSpeedHz = 895000; // Default CoCo speed is 0.895 MHz
 let lastTime = 0;
 let accumulatedCycles = 0;
 
-// PIA 0 Registers (Keyboard, joysticks, etc. - mapped at $FF00-$FF03)
-let pia0_porta = 0xFF;     // Row inputs
-let pia0_ddra = 0x00;      // Row data direction (0 = input)
-let pia0_controla = 0x00;  // Control register A
-let pia0_portb = 0xFF;     // Column outputs
-let pia0_ddrb = 0x00;      // Column data direction (1 = output)
-let pia0_controlb = 0x00;  // Control register B
+// PIA 0 (Keyboard, joysticks, etc. - mapped at $FF00-$FF1F)
+const pia0 = MC6821.create({
+  portbResetValue: 0xFF,
+  readPortA: () => readKeyboardRow(),
+  onReadDataA: () => MC6809.set_irq_line(false),
+  onReadDataB: () => MC6809.set_irq_line(false),
+  // Writing Port B also clears the CB1 vertical sync interrupt flag
+  onWriteDataB: () => MC6809.set_irq_line(false)
+});
 
-// PIA 1 Registers (Sound, VDG control, RS232 - mapped at $FF20-$FF23)
-let pia1_porta = 0xFF;
-let pia1_ddra = 0x00;
-let pia1_controla = 0x00;
-let pia1_portb = 0x00;     // VDG control (GM0-GM2, A/G, CSS)
-let pia1_ddrb = 0x00;
-let pia1_controlb = 0x00;
+// PIA 1 (Sound, VDG control, RS232, cassette - mapped at $FF20-$FF3F)
+const pia1 = MC6821.create({
+  portbResetValue: 0x00,
+  readPortA: (pia) => (cassetteInputBit === 1) ? (pia.porta | 0x01) : (pia.porta & ~0x01),
+  onReadDataA: () => {
+    MC6809.set_irq_line(false);
+    MC6809.set_firq_line(false);
+  },
+  onReadDataB: () => MC6809.set_firq_line(false), // Clear cartridge FIRQ!
+  onWriteControlA: (pia, oldControlA, newControlA) => {
+    const oldMotor = (oldControlA & 0x08) !== 0;
+    const newMotor = (newControlA & 0x08) !== 0;
+    if (oldMotor !== newMotor && cassetteBuffer) {
+      updateTapeStatusUI(newMotor);
+    }
+  },
+  onWriteControlB: (pia, newControlB) => {
+    if (cartridgeLoaded && (newControlB & 0x01)) {
+      // If cartridge is loaded and CB1 interrupt is enabled, set flag and assert FIRQ
+      pia.controlb |= 0x80;
+      MC6809.set_firq_line(true);
+    }
+  },
+  controlBReadMask: () => cartridgeLoaded ? 0x80 : 0
+});
 
-// SAM Registers (Synchronous Address Multiplexer - toggled at $FFC0-$FFDF)
-const sam = {
-  v: 0,   // VDG mode (V0-V2)
-  f: 0,   // Display start offset page (F0-F6)
-  r: 0,   // CPU speed (R0-R1)
-  m: 0,   // Memory size (M0-M1)
-  ty: 0   // Map type (0 = ROM mode, 1 = All RAM mode)
-};
-let allRamMode = false;
-let ntscMode = 'monochrome'; // 'monochrome', 'phase0', 'phase1'
+// SAM (Synchronous Address Multiplexer - toggled at $FFC0-$FFDF)
+const sam = MC6883.create({
+  onClockChange: (isFast) => {
+    // If the slider is set to Native (index 4), adjust execution speed dynamically
+    if (speedSlider && parseInt(speedSlider.value) === 4) {
+      cpuSpeedHz = isFast ? 1790000 : 895000;
+    }
+    updateSpeedUI();
+  }
+});
+
+// VDG (Video Display Generator)
+const vdg = MC6847.create({ ram });
 
 // Web Audio API State for 6-bit DAC Emulation
 let audioCtx = null;
@@ -149,14 +172,14 @@ function byteAt(addr) {
   // I/O & hardware registers
   if (addr >= 0xFF00) {
     if (addr >= 0xFF00 && addr <= 0xFF1F) {
-      return readPia0(addr);
+      return pia0.read(addr);
     }
     if (addr >= 0xFF20 && addr <= 0xFF3F) {
-      return readPia1(addr);
+      return pia1.read(addr);
     }
     if (addr >= 0xFFE0 && addr <= 0xFFFF) {
       // Hardware interrupt vectors
-      if (!allRamMode) {
+      if (!sam.allRamMode) {
         // ROM mode: vectors map to top of Color BASIC ROM ($FFF2-$FFFF -> $BFF2-$BFFF)
         return colorBasicRom[addr - 0xE000];
       } else {
@@ -165,8 +188,8 @@ function byteAt(addr) {
     }
     return 0xFF;
   }
-  
-  if (allRamMode) {
+
+  if (sam.allRamMode) {
     return ram[addr];
   } else {
     // ROM mode
@@ -187,27 +210,35 @@ function byteTo(addr, val) {
   // I/O & hardware registers
   if (addr >= 0xFF00) {
     if (addr >= 0xFF00 && addr <= 0xFF1F) {
-      writePia0(addr, val);
+      pia0.write(addr, val);
       return;
     }
     if (addr >= 0xFF20 && addr <= 0xFF3F) {
-      writePia1(addr, val);
+      pia1.write(addr, val);
       return;
     }
     if (addr >= 0xFFC0 && addr <= 0xFFDF) {
-      writeSam(addr);
+      sam.write(addr);
       return;
     }
     if (addr >= 0xFFE0 && addr <= 0xFFFF) {
-      if (allRamMode) {
+      if (sam.allRamMode) {
         ram[addr] = val;
       }
       return;
     }
     return;
   }
-  
-  if (allRamMode) {
+
+  if (sam.allRamMode) {
+    if (cartridgeLoaded) {
+      const cartLen = cartridgeRomBackup ? cartridgeRomBackup.length : 16128;
+      const cartEnd = 0xC000 + Math.min(cartLen, 16128) - 1;
+      if (addr >= 0xC000 && addr <= cartEnd) {
+        // Cartridge ROM is write protected!
+        return;
+      }
+    }
     ram[addr] = val;
   } else {
     // ROM mode
@@ -215,136 +246,15 @@ function byteTo(addr, val) {
       // ROM is write protected!
       return;
     }
-    if (cartridgeLoaded && addr >= 0xC000 && addr <= 0xFEFF) {
-      // Cartridge ROM is write protected!
-      return;
+    if (cartridgeLoaded) {
+      const cartLen = cartridgeRomBackup ? cartridgeRomBackup.length : 16128;
+      const cartEnd = 0xC000 + Math.min(cartLen, 16128) - 1;
+      if (addr >= 0xC000 && addr <= cartEnd) {
+        // Cartridge ROM is write protected!
+        return;
+      }
     }
     ram[addr] = val;
-  }
-}
-
-// PIA Emulation
-function readPia0(addr) {
-  const reg = addr & 3;
-  switch (reg) {
-    case 0: // Port A (Data/DDR)
-      if (pia0_controla & 0x04) {
-        pia0_controla &= ~0x80; // Clear CA1 interrupt flag
-        CPU6809.set_irq_line(false);
-        return readKeyboardRow();
-      } else {
-        return pia0_ddra;
-      }
-    case 1: // Control A
-      return pia0_controla;
-    case 2: // Port B (Data/DDR)
-      if (pia0_controlb & 0x04) {
-        if (!cartridgeLoaded) {
-          pia0_controlb &= ~0x80; // Clear CB1 interrupt flag
-        }
-        CPU6809.set_irq_line(false);
-        return pia0_portb;
-      } else {
-        return pia0_ddrb;
-      }
-    case 3: // Control B
-      return cartridgeLoaded ? (pia0_controlb | 0x80) : pia0_controlb;
-  }
-}
-
-function writePia0(addr, val) {
-  const reg = addr & 3;
-  switch (reg) {
-    case 0:
-      if (pia0_controla & 0x04) {
-        pia0_porta = val;
-      } else {
-        pia0_ddra = val;
-      }
-      break;
-    case 1:
-      pia0_controla = (pia0_controla & 0xC0) | (val & 0x3F);
-      break;
-    case 2:
-      if (pia0_controlb & 0x04) {
-        pia0_portb = val;
-        // Writing/reading Port B register clears vertical sync interrupt
-        pia0_controlb &= ~0x80;
-        CPU6809.set_irq_line(false);
-      } else {
-        pia0_ddrb = val;
-      }
-      break;
-    case 3:
-      pia0_controlb = (pia0_controlb & 0xC0) | (val & 0x3F);
-      break;
-  }
-}
-
-function readPia1(addr) {
-  const reg = addr & 3;
-  switch (reg) {
-    case 0:
-      if (pia1_controla & 0x04) {
-        pia1_controla &= ~0x80; // Clear CA1 flag
-        CPU6809.set_irq_line(false);
-        CPU6809.set_firq_line(cartridgeLoaded);
-        let val = pia1_porta;
-        if (cassetteInputBit === 1) {
-          val |= 0x01;
-        } else {
-          val &= ~0x01;
-        }
-        return val;
-      } else {
-        return pia1_ddra;
-      }
-    case 1:
-      return pia1_controla;
-    case 2:
-      if (pia1_controlb & 0x04) {
-        if (!cartridgeLoaded) {
-          pia1_controlb &= ~0x80; // Clear CB1 flag
-        }
-        return pia1_portb;
-      } else {
-        return pia1_ddrb;
-      }
-    case 3:
-      return cartridgeLoaded ? (pia1_controlb | 0x80) : pia1_controlb;
-  }
-}
-
-function writePia1(addr, val) {
-  const reg = addr & 3;
-  switch (reg) {
-    case 0:
-      if (pia1_controla & 0x04) {
-        pia1_porta = val;
-      } else {
-        pia1_ddra = val;
-      }
-      break;
-    case 1:
-      {
-        const oldMotor = (pia1_controla & 0x08) !== 0;
-        pia1_controla = (pia1_controla & 0xC0) | (val & 0x3F);
-        const newMotor = (pia1_controla & 0x08) !== 0;
-        if (oldMotor !== newMotor && cassetteBuffer) {
-          updateTapeStatusUI(newMotor);
-        }
-      }
-      break;
-    case 2:
-      if (pia1_controlb & 0x04) {
-        pia1_portb = val;
-      } else {
-        pia1_ddrb = val;
-      }
-      break;
-    case 3:
-      pia1_controlb = (pia1_controlb & 0xC0) | (val & 0x3F);
-      break;
   }
 }
 
@@ -361,54 +271,18 @@ function updateTapeStatusUI(motorOn) {
   }
 }
 
-// SAM Emulation
-function writeSam(addr) {
-  const bitIndex = Math.floor((addr - 0xFFC0) / 2);
-  const val = addr & 1; // 0 if even, 1 if odd
-  
-  if (bitIndex < 3) {
-    // V0, V1, V2 (VDG mode select)
-    if (val) sam.v |= (1 << bitIndex); else sam.v &= ~(1 << bitIndex);
-  } else if (bitIndex >= 3 && bitIndex < 10) {
-    // F0 to F6 (Display starting offset)
-    const fBit = bitIndex - 3;
-    if (val) sam.f |= (1 << fBit); else sam.f &= ~(1 << fBit);
-  } else if (bitIndex === 11 || bitIndex === 12) {
-    // R0, R1 (CPU clock speed mode select)
-    const rBit = bitIndex - 11;
-    if (val) sam.r |= (1 << rBit); else sam.r &= ~(1 << rBit);
-    
-    const isFast = (sam.r & 1) === 1;
-    // If the slider is set to Native (index 4), adjust execution speed dynamically
-    if (speedSlider && parseInt(speedSlider.value) === 4) {
-      cpuSpeedHz = isFast ? 1790000 : 895000;
-    }
-    updateSpeedUI();
-  } else if (bitIndex === 13 || bitIndex === 14) {
-    // M0, M1 (RAM size select)
-    const mBit = bitIndex - 13;
-    if (val) sam.m |= (1 << mBit); else sam.m &= ~(1 << mBit);
-  } else if (bitIndex === 15) {
-    // TY (Map Type: 0 = ROM/RAM, 1 = All RAM)
-    sam.ty = val;
-    allRamMode = (sam.ty === 1);
-  }
-}
-
 function updateSpeedUI() {
   const speedModeText = document.getElementById('hardware-speed-mode');
   if (speedModeText) {
-    const isFast = (sam.r & 1) === 1;
-    speedModeText.innerText = isFast ? "1.79 MHz (Fast)" : "0.89 MHz (Normal)";
+    speedModeText.innerText = sam.isFastClock ? "1.79 MHz (Fast)" : "0.89 MHz (Normal)";
   }
-  
+
   const speedValueText = document.getElementById('cpu-speed-value');
   if (speedValueText) {
     if (cpuSpeedHz === 895000) {
       speedValueText.innerText = "895 kHz (Original)";
     } else if (cpuSpeedHz === 1790000) {
-      const isFast = (sam.r & 1) === 1;
-      speedValueText.innerText = isFast ? "1.79 MHz (Fast Mode)" : "1.79 MHz (Overclocked)";
+      speedValueText.innerText = sam.isFastClock ? "1.79 MHz (Fast Mode)" : "1.79 MHz (Overclocked)";
     } else if (cpuSpeedHz === 100) {
       speedValueText.innerText = "100 Hz (Debug)";
     } else if (cpuSpeedHz === 1000) {
@@ -430,7 +304,7 @@ function updateSpeedUI() {
 // Keyboard Scanning
 function readKeyboardRow() {
   let rowVal = 0xFF; // All bits high (pull-up resistors)
-  const colStrobe = pia0_portb;
+  const colStrobe = pia0.portb;
   
   // Strobe is active-low: if a bit is 0, that column is scanned
   for (let col = 0; col < 8; col++) {
@@ -456,9 +330,9 @@ function readKeyboardRow() {
   
   // Joystick comparator logic
   // Channel select is controlled by CA2 and CB2:
-  // CB2 (bit 3 of pia0_controlb) is MUX SEL B (high bit)
-  // CA2 (bit 3 of pia0_controla) is MUX SEL A (low bit)
-  const channel = ((pia0_controlb & 0x08) ? 2 : 0) | ((pia0_controla & 0x08) ? 1 : 0);
+  // CB2 (bit 3 of pia0.controlb) is MUX SEL B (high bit)
+  // CA2 (bit 3 of pia0.controla) is MUX SEL A (low bit)
+  const channel = ((pia0.controlb & 0x08) ? 2 : 0) | ((pia0.controla & 0x08) ? 1 : 0);
   let joyVal = 31;
   if (channel === 0) {
     joyVal = rightJoyX;
@@ -470,8 +344,8 @@ function readKeyboardRow() {
     joyVal = leftJoyY;
   }
   
-  // 6-bit DAC value is written to pia1_porta bits 2-7
-  const dacVal = (pia1_porta >> 2) & 0x3F;
+  // 6-bit DAC value is written to pia1.porta bits 2-7
+  const dacVal = (pia1.porta >> 2) & 0x3F;
   
   // Set comparator bit (bit 7 of Port A): 1 if joyVal >= dacVal, else 0
   if (joyVal >= dacVal) {
@@ -663,166 +537,7 @@ function handleKeyUp(e) {
 // Virtual Screen Render Engine
 // Emulates MC6847 VDG output based on PIA and SAM configurations
 function renderScreen() {
-  const displayStart = sam.f * 512;
-  const css = (pia1_portb & 0x08) ? 1 : 0; // Color Set Select
-  const ag = (pia1_portb & 0x80) ? 1 : 0;  // Alpha/Graphics mode select
-  
-  if (ag === 1) {
-    // Graphics Mode (render monochrome high-res PMODE 4 graphics)
-    renderGraphicsMode(displayStart, css);
-  } else {
-    // Text / Semigraphics Mode
-    renderTextMode(displayStart, css);
-  }
-}
-
-// Text Mode render
-function renderTextMode(displayStart, css) {
-  // Screen size: 32 columns * 16 rows. Cell resolution: 8 * 12.
-  ctx.fillStyle = '#001100'; // Background border
-  ctx.fillRect(0, 0, 256, 192);
-  
-  const colors = [
-    '#00ff00', // Green
-    '#ffff00', // Yellow
-    '#0000ff', // Blue
-    '#ff0000', // Red
-    '#ffffff', // Buff/White
-    '#00ffff', // Cyan
-    '#ff00ff', // Magenta
-    '#ff8800'  // Orange
-  ];
-  
-  // Set up font for fillText
-  ctx.font = 'bold 11px monospace';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  
-  for (let row = 0; row < 16; row++) {
-    for (let col = 0; col < 32; col++) {
-      const addr = displayStart + row * 32 + col;
-      const b = ram[addr];
-      const x = col * 8;
-      const y = row * 12;
-      
-      if (b < 128) {
-        // Text character
-        const isInverse = b >= 64;
-        const charCode = isInverse ? (b - 64) : b;
-        
-        let charStr = ' ';
-        if (charCode < 32) {
-          charStr = String.fromCharCode(charCode + 64); // @, A-Z, etc.
-        } else {
-          charStr = String.fromCharCode(charCode);      // space, numbers, punctuation
-        }
-        
-        // Define colors based on inverse flag and CSS color set
-        let fgColor = css ? '#eeeeee' : '#00ff00';
-        let bgColor = '#001100';
-        
-        if (isInverse) {
-          // Swap background and foreground
-          const temp = fgColor;
-          fgColor = bgColor;
-          bgColor = temp;
-        }
-        
-        // Draw character background
-        ctx.fillStyle = bgColor;
-        ctx.fillRect(x, y, 8, 12);
-        
-        // Draw character text
-        ctx.fillStyle = fgColor;
-        ctx.fillText(charStr, x + 4, y + 6);
-      } else {
-        // Semigraphics 4 mode (SG4: 2x2 colored pixel block)
-        const colorIdx = (b >> 4) & 0x07;
-        const color = colors[colorIdx];
-        
-        // 2x2 sub-pixel configurations (4 bits control each quadrant)
-        const bit0 = b & 0x01; // top-left
-        const bit1 = b & 0x02; // top-right
-        const bit2 = b & 0x04; // bottom-left
-        const bit3 = b & 0x08; // bottom-right
-        
-        ctx.fillStyle = '#001100'; // Default black background
-        ctx.fillRect(x, y, 8, 12);
-        
-        ctx.fillStyle = color;
-        if (bit0) ctx.fillRect(x, y, 4, 6);
-        if (bit1) ctx.fillRect(x + 4, y, 4, 6);
-        if (bit2) ctx.fillRect(x, y + 6, 4, 6);
-        if (bit3) ctx.fillRect(x + 4, y + 6, 4, 6);
-      }
-    }
-  }
-}
-
-// Graphics Mode render (256x192 monochrome PMODE 4)
-function renderGraphicsMode(displayStart, css) {
-  const imgData = ctx.createImageData(256, 192);
-  const data = imgData.data;
-  
-  const fgRGB = css ? [238, 238, 238] : [0, 255, 0];
-  const bgRGB = [0, 17, 0];
-  
-  // Authentic NTSC Chrominance artifacts (transients)
-  const blueRGB = [40, 100, 255];
-  const orangeRGB = [255, 100, 0];
-  
-  for (let y = 0; y < 192; y++) {
-    for (let xByte = 0; xByte < 32; xByte++) {
-      const addr = displayStart + y * 32 + xByte;
-      const val = ram[addr];
-      
-      // Process bits in pairs (NTSC artifact pixels)
-      for (let bit = 0; bit < 8; bit += 2) {
-        const pixelX0 = xByte * 8 + bit;
-        const pixelX1 = pixelX0 + 1;
-        
-        const p0 = (val & (0x80 >> bit)) !== 0;
-        const p1 = (val & (0x80 >> (bit + 1))) !== 0;
-        
-        let rgb0, rgb1;
-        
-        if (ntscMode === 'monochrome') {
-          rgb0 = p0 ? fgRGB : bgRGB;
-          rgb1 = p1 ? fgRGB : bgRGB;
-        } else {
-          // Combine adjacent bits into artifact codes
-          const code = (p0 ? 2 : 0) | (p1 ? 1 : 0);
-          let color;
-          if (code === 0) {
-            color = bgRGB;
-          } else if (code === 3) {
-            color = fgRGB;
-          } else if (code === 2) {
-            // "10" pixel pattern
-            color = (ntscMode === 'phase0') ? blueRGB : orangeRGB;
-          } else {
-            // "01" pixel pattern
-            color = (ntscMode === 'phase0') ? orangeRGB : blueRGB;
-          }
-          rgb0 = color;
-          rgb1 = color;
-        }
-        
-        const idx0 = (y * 256 + pixelX0) * 4;
-        data[idx0] = rgb0[0];
-        data[idx0+1] = rgb0[1];
-        data[idx0+2] = rgb0[2];
-        data[idx0+3] = 255;
-        
-        const idx1 = (y * 256 + pixelX1) * 4;
-        data[idx1] = rgb1[0];
-        data[idx1+1] = rgb1[1];
-        data[idx1+2] = rgb1[2];
-        data[idx1+3] = 255;
-      }
-    }
-  }
-  ctx.putImageData(imgData, 0, 0);
+  vdg.render(ctx, sam.f * 512, pia1.portb);
 }
 
 // Vertical Sync interrupt timer (60 Hz)
@@ -1027,18 +742,18 @@ function emulatorFrame(timestamp) {
     accumulatedCycles -= cyclesToRunInt;
     
     let cyclesRemaining = cyclesToRunInt;
-    const cyclesPerFrame = 14916; // 895000 Hz / 60 Hz = 14916.6 cycles
+    const cyclesPerFrame = Math.floor(cpuSpeedHz / 60);
     
     while (cyclesRemaining > 0) {
       const cyclesToVsync = cyclesPerFrame - vsyncCycleTimer;
       
       // Limit chunk size to 20 cycles to ensure cycle-accurate audio sampling (10 if tape is playing)
-      const isTapePlaying = cassetteBuffer && (pia1_controla & 0x08) !== 0;
+      const isTapePlaying = cassetteBuffer && (pia1.controla & 0x08) !== 0;
       const maxChunk = isTapePlaying ? 10 : 20;
       
       const chunk = Math.min(cyclesRemaining, Math.min(maxChunk, Math.max(1, Math.floor(cyclesToVsync))));
       
-      CPU6809.steps(chunk);
+      MC6809.steps(chunk);
       cyclesRemaining -= chunk;
       vsyncCycleTimer += chunk;
       
@@ -1050,9 +765,9 @@ function emulatorFrame(timestamp) {
         
         let sample = 0.0;
         // Sound is enabled if Sound Enable (PIA 1 CB2) is 1, and Sound Select (PIA 0 CA2/CB2) is 00 (6-bit DAC)
-        const soundEnabled = (pia1_controlb & 0x08) !== 0 && (pia0_controla & 0x08) === 0 && (pia0_controlb & 0x08) === 0;
+        const soundEnabled = (pia1.controlb & 0x08) !== 0 && (pia0.controla & 0x08) === 0 && (pia0.controlb & 0x08) === 0;
         if (soundEnabled) {
-          const dacVal = (pia1_porta >> 2) & 0x3F;
+          const dacVal = (pia1.porta >> 2) & 0x3F;
           sample = (dacVal - 31.5) / 31.5;
         }
         audioQueue.push(sample);
@@ -1060,7 +775,7 @@ function emulatorFrame(timestamp) {
       
       // Cycle-accurate cassette tape playback sampling
       if (cassetteBuffer) {
-        const motorOn = (pia1_controla & 0x08) !== 0;
+        const motorOn = (pia1.controla & 0x08) !== 0;
         if (motorOn) {
           cassetteCycleTimer += chunk;
           const cyclesPerWavSample = cpuSpeedHz / cassetteSampleRate;
@@ -1075,7 +790,7 @@ function emulatorFrame(timestamp) {
                 cassetteInputBit = nextBit;
                 
                 // Set CA1 Interrupt Flag on configured transition edge
-                const edgeSelect = (pia1_controla & 0x02) !== 0; // true = rising, false = falling
+                const edgeSelect = (pia1.controla & 0x02) !== 0; // true = rising, false = falling
                 let triggered = false;
                 if (oldBit === 0 && nextBit === 1 && edgeSelect) {
                   triggered = true; // Low-to-high transition (rising edge)
@@ -1084,9 +799,9 @@ function emulatorFrame(timestamp) {
                 }
                 
                 if (triggered) {
-                  pia1_controla |= 0x80; // Set CA1 Interrupt Flag (bit 7)
-                  if (pia1_controla & 0x01) { // CA1 Interrupt Enable (bit 0)
-                    CPU6809.set_irq_line(true);
+                  pia1.controla |= 0x80; // Set CA1 Interrupt Flag (bit 7)
+                  if (pia1.controla & 0x01) { // CA1 Interrupt Enable (bit 0)
+                    MC6809.set_irq_line(true);
                   }
                 }
               }
@@ -1111,11 +826,11 @@ function emulatorFrame(timestamp) {
         vsyncCycleTimer -= cyclesPerFrame;
         
         // Set CB1 vertical sync flag (bit 7 of PIA 0 Port B Control)
-        pia0_controlb |= 0x80;
-        
+        pia0.controlb |= 0x80;
+
         // If interrupt enabled, signal CPU
-        if (pia0_controlb & 0x01) {
-          CPU6809.set_irq_line(true);
+        if (pia0.controlb & 0x01) {
+          MC6809.set_irq_line(true);
         }
         
         // Update simulated typing inside the VSYNC interrupt (perfectly synchronized!)
@@ -1141,11 +856,11 @@ function emulatorFrame(timestamp) {
 // Debug Panel Updates
 function updateDebugger() {
   // Update registers
-  const status = CPU6809.status();
+  const status = MC6809.status();
   debugRegs.innerHTML = `
 PC: <span class="val">$${hex16(status.pc)}</span>   SP: <span class="val">$${hex16(status.sp)}</span>   U:  <span class="val">$${hex16(status.u)}</span>
 A:  <span class="val">$${hex8(status.a)}</span>    B:  <span class="val">$${hex8(status.b)}</span>    X:  <span class="val">$${hex16(status.x)}</span>
-Y:  <span class="val">$${hex16(status.y)}</span>    DP: <span class="val">$${hex8(status.dp)}</span>   CC: <span class="val">%${status.flags.toString(2).padStart(8,'0')}</span> (${CPU6809.flagsToString()})
+Y:  <span class="val">$${hex16(status.y)}</span>    DP: <span class="val">$${hex8(status.dp)}</span>   CC: <span class="val">%${status.flags.toString(2).padStart(8,'0')}</span> (${MC6809.flagsToString()})
   `;
   
   // Disassembler
@@ -1154,7 +869,7 @@ Y:  <span class="val">$${hex16(status.y)}</span>    DP: <span class="val">$${hex
   const arg2 = byteAt(status.pc + 2);
   const arg3 = byteAt(status.pc + 3);
   const arg4 = byteAt(status.pc + 4);
-  const dis = CPU6809.disasm(opByte, arg1, arg2, arg3, arg4, status.pc);
+  const dis = MC6809.disasm(opByte, arg1, arg2, arg3, arg4, status.pc);
   const mnem = dis[0];
   const instLen = dis[1];
   const byteList = [];
@@ -1269,26 +984,11 @@ function powerOn() {
   }
   
   // Setup hardware defaults
-  pia0_porta = 0xFF;
-  pia0_ddra = 0x00;
-  pia0_controla = 0x00;
-  pia0_portb = 0xFF;
-  pia0_ddrb = 0x00;
-  pia0_controlb = cartridgeLoaded ? 0x80 : 0x00;
-  
-  pia1_porta = 0xFF;
-  pia1_ddra = 0x00;
-  pia1_controla = 0x00;
-  pia1_portb = 0x00;
-  pia1_ddrb = 0x00;
-  pia1_controlb = cartridgeLoaded ? 0x80 : 0x00;
-  
-  sam.v = 0;
+  pia0.reset();
+  pia1.reset();
+
+  sam.reset();
   sam.f = 2; // Default screen at page 2 ($0400)
-  sam.r = 0;
-  sam.m = 0;
-  sam.ty = 0;
-  allRamMode = false;
   cpuSpeedHz = 895000;
   
   if (speedSlider) {
@@ -1301,9 +1001,9 @@ function powerOn() {
   // Let's verify what the ROM reset vector actually reads. It will be loaded from colorBasicRom.
   
   // Initialize CPU
-  CPU6809.init(byteTo, byteAt, null);
-  CPU6809.set_firq_line(cartridgeLoaded);
-  CPU6809.set_irq_line(false);
+  MC6809.init(byteTo, byteAt, null);
+  MC6809.set_firq_line(false);
+  MC6809.set_irq_line(false);
   
   // Set LED color
   const led = document.getElementById('power-led');
@@ -1328,27 +1028,23 @@ function systemReset() {
     }
   }
   
-  CPU6809.reset();
-  CPU6809.set_firq_line(cartridgeLoaded);
-  CPU6809.set_irq_line(false);
+  MC6809.reset();
+  MC6809.set_firq_line(false);
+  MC6809.set_irq_line(false);
   cpuSpeedHz = 895000;
-  sam.v = 0;
+  sam.reset();
   sam.f = 2;
-  sam.r = 0;
-  sam.m = 0;
-  sam.ty = 0;
-  allRamMode = false;
-  
+
   if (speedSlider) {
     speedSlider.value = 4;
   }
   updateSpeedUI();
-  
-  pia0_controla = 0x00;
-  pia0_controlb = cartridgeLoaded ? 0x80 : 0x00;
-  pia1_controla = 0x00;
-  pia1_controlb = cartridgeLoaded ? 0x80 : 0x00;
-  
+
+  pia0.controla = 0x00;
+  pia0.controlb = 0x00;
+  pia1.controla = 0x00;
+  pia1.controlb = 0x00;
+
   console.log("Color Computer 2 System Reset.");
 }
 
@@ -1849,8 +1545,7 @@ window.addEventListener('DOMContentLoaded', () => {
     } else if (val === 3) {
       cpuSpeedHz = 100000;
     } else if (val === 4) {
-      const isFast = (sam.r & 1) === 1;
-      cpuSpeedHz = isFast ? 1790000 : 895000;
+      cpuSpeedHz = sam.isFastClock ? 1790000 : 895000;
     } else if (val === 5) {
       cpuSpeedHz = 1790000;
     } else if (val === 6) {
@@ -1892,16 +1587,16 @@ window.addEventListener('DOMContentLoaded', () => {
   // NTSC Artifact mode selector
   document.getElementById('btn-ntsc-mode').addEventListener('click', () => {
     const btn = document.getElementById('btn-ntsc-mode');
-    if (ntscMode === 'monochrome') {
-      ntscMode = 'phase0';
+    if (vdg.ntscMode === 'monochrome') {
+      vdg.ntscMode = 'phase0';
       btn.innerText = "📺 NTSC: Phase 0";
       btn.className = "btn-primary btn-sm";
-    } else if (ntscMode === 'phase0') {
-      ntscMode = 'phase1';
+    } else if (vdg.ntscMode === 'phase0') {
+      vdg.ntscMode = 'phase1';
       btn.innerText = "📺 NTSC: Phase 1";
       btn.className = "btn-primary btn-sm";
     } else {
-      ntscMode = 'monochrome';
+      vdg.ntscMode = 'monochrome';
       btn.innerText = "📺 NTSC: Off";
       btn.className = "btn-secondary btn-sm";
     }

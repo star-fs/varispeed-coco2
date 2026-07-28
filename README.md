@@ -51,9 +51,12 @@ Play Online live from this repository: https://star-fs.github.io/varispeed-coco2
 * [server.js](server.js): A zero-dependency static node web server to host the application.
 * [index.html](index.html): The main web interface, featuring a retro CRT curved display bezel, register/disassembly debug panels, and control consoles.
 * [index.css](index.css): Custom CSS styles giving a premium glassmorphic dark-theme design, CRT scanline grids, phosphor glow effects, and modeled keyboard caps.
-* [coco2.js](coco2.js): The emulation hub managing RAM/ROM address decoding, MC6847 video output (supporting Text, Semigraphics 4, and PMODE 4 high-res graphics), keyboard matrix strobe scans, and the auto-typer.
+* [coco2.js](coco2.js): The emulation hub managing RAM/ROM address decoding, keyboard matrix strobe scans, gamepad/joystick input, audio/cassette sampling, disk/cartridge loading, the auto-typer, and UI wiring. Delegates chip-specific behavior to mc6883.js, mc6821.js, and mc6847.js.
+* [mc6883.js](mc6883.js): The MC6883 Synchronous Address Multiplexer (SAM) emulator core — VDG mode/display-offset/CPU-speed/memory-map register decoding.
+* [mc6821.js](mc6821.js): The MC6821 Peripheral Interface Adapter (PIA) emulator core. A single reusable chip model instantiated twice in coco2.js (PIA0 for keyboard/joysticks, PIA1 for sound/VDG control/cassette/cartridge FIRQ).
+* [mc6847.js](mc6847.js): The MC6847 Video Display Generator (VDG) emulator core, rendering Text, Semigraphics 4, and PMODE 4 high-res graphics (including NTSC artifact coloring) to the canvas.
 * [roms_b64.js](roms_b64.js): Hex/base64 representation of the original Color BASIC v1.3 and Extended Color BASIC v1.1 ROMs, acting as an offline fallback.
-* [6809.js](6809.js): The Motorola 6809 CPU core emulator. Modified to support active IRQ and NMI vector execution.
+* [mc6809.js](mc6809.js): The Motorola MC6809 CPU core emulator. Modified to support active IRQ and NMI vector execution.
 
 ---
 

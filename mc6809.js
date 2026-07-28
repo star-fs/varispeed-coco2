@@ -12,7 +12,7 @@
   else if (typeof define == "function" && typeof define.amd == "object")
     define(definition);
   else this[name] = definition();
-})("CPU6809", function () {
+})("MC6809", function () {
   var rA,
     rB,
     rX,
@@ -24,6 +24,7 @@
     DP,
     firq_asserted = false,
     irq_asserted = false,
+    sync_halted = false,
     F_CARRY = 1,
     F_OVERFLOW = 2,
     F_ZERO = 4,
@@ -1533,6 +1534,7 @@ var oSUB = function(b,v) {
       case 0x12: //NOP
         break;
       case 0x13: //SYNC
+        sync_halted = true;
         break;
       case 0x16: //LBRA relative
         addr = signed16(fetch16());
@@ -2738,6 +2740,7 @@ var oSUB = function(b,v) {
     PC = ReadWord(vecRESET);
     DP = 0;
     CC |= F_FIRQMASK | F_IRQMASK;
+    sync_halted = false;
     T = 0;
   };
 
@@ -3334,6 +3337,15 @@ IMMEDIAT_16 8
   return {
     steps: function (Ts) {
       while (Ts > 0) {
+        if (sync_halted) {
+          if (firq_asserted || irq_asserted) {
+            sync_halted = false;
+          } else {
+            T += Ts;
+            Ts = 0;
+            break;
+          }
+        }
         if (firq_asserted && !(CC & F_FIRQMASK)) {
           firq_asserted = false;
           CC &= ~F_ENTIRE;
