@@ -1236,6 +1236,7 @@
     }
 
     if (xchg !== null) {
+      xchg &= 0xffff;
       switch (pb & 0x60) {
         case 0:
           rX = xchg;
@@ -1404,7 +1405,7 @@ var oSUB = function(b,v) {
     var temp = b;
     CC &= ~(F_ZERO | F_CARRY | F_NEGATIVE | F_OVERFLOW);
     if (b & 0x80) CC |= F_CARRY;
-    b <<= 1;
+    b = (b << 1) & 0xff;
     CC |= flagsNZ[b];
     if ((b ^ temp) & 0x80) CC |= F_OVERFLOW;
     return b;
@@ -1414,7 +1415,7 @@ var oSUB = function(b,v) {
     var oldc = CC & F_CARRY;
     CC &= ~(F_ZERO | F_CARRY | F_NEGATIVE | F_OVERFLOW);
     if (b & 0x80) CC |= F_CARRY;
-    b = (b << 1) | oldc;
+    b = ((b << 1) | oldc) & 0xff;
     CC |= flagsNZ[b];
     if ((b ^ temp) & 0x80) CC |= F_OVERFLOW;
     return b;
@@ -1681,7 +1682,7 @@ var oSUB = function(b,v) {
         PC = PULLW();
         break;
       case 0x3a: //ABX
-        rX += rB;
+        rX = (rX + rB) & 0xffff;
         break;
       case 0x3b: //RTI
         CC = PULLB();
@@ -2296,12 +2297,13 @@ var oSUB = function(b,v) {
       case 0xdd: //STD direct
         addr = dpadd();
         WriteWord(addr, getD());
+        flagsNZ16(getD());
         CC &= ~F_OVERFLOW;
         break;
       case 0xde: //LDU direct
         addr = dpadd();
         rU = ReadWord(addr);
-        flagsNZ16(rX);
+        flagsNZ16(rU);
         CC &= ~F_OVERFLOW;
         break;
       case 0xdf: //STU direct
@@ -2373,6 +2375,7 @@ var oSUB = function(b,v) {
       case 0xed: //STD indexed
         addr = PostByte();
         WriteWord(addr, getD());
+        flagsNZ16(getD());
         CC &= ~F_OVERFLOW;
         break;
       case 0xee: //LDU indexed
@@ -2451,6 +2454,7 @@ var oSUB = function(b,v) {
       case 0xfd: //STD extended
         addr = fetch16();
         WriteWord(addr, getD());
+        flagsNZ16(getD());
         CC &= ~F_OVERFLOW;
         break;
       case 0xfe: //LDU extended

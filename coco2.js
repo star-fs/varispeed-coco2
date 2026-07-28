@@ -35,11 +35,8 @@ const pia0 = MC6821.create({
 const pia1 = MC6821.create({
   portbResetValue: 0x00,
   readPortA: (pia) => (cassetteInputBit === 1) ? (pia.porta | 0x01) : (pia.porta & ~0x01),
-  onReadDataA: () => {
-    MC6809.set_irq_line(false);
-    MC6809.set_firq_line(false);
-  },
-  onReadDataB: () => MC6809.set_firq_line(false), // Clear cartridge FIRQ!
+  onReadDataA: () => MC6809.set_irq_line(false), // Clear cassette (CA1) IRQ
+  onReadDataB: () => MC6809.set_firq_line(false), // Port B data read clears the CB1/FIRQ line
   onWriteControlA: (pia, oldControlA, newControlA) => {
     const oldMotor = (oldControlA & 0x08) !== 0;
     const newMotor = (newControlA & 0x08) !== 0;
@@ -58,10 +55,14 @@ const pia1 = MC6821.create({
       }
     }
   },
-  onWriteControlB: (pia, newControlB) => {
-    if (cartridgeLoaded && (newControlB & 0x01)) {
-      // If cartridge is loaded and CB1 interrupt is enabled, set flag and assert FIRQ
-      pia.controlb |= 0x80;
+  onWriteControlB: (pia, oldControlB, newControlB) => {
+    // The ROM's boot code enables CB1 interrupts as routine PIA1 setup; if
+    // the transient CART* pulse is still pending (not yet delivered since
+    // the last reset), that write is what autostarts the cartridge. This
+    // must fire at most ONCE per reset -- later gameplay writes to this
+    // same register (for unrelated purposes) must not re-trigger it.
+    if (cartridgeFirqPending && cartridgeLoaded && (newControlB & 0x01)) {
+      cartridgeFirqPending = false;
       MC6809.set_firq_line(true);
     }
   },
@@ -117,6 +118,13 @@ let lastLoadedDiskName = "";
 // Cartridge state
 let cartridgeLoaded = false;
 let cartridgeRomBackup = null;
+
+// Real hardware's AC-coupled CART* pin delivers one transient pulse per
+// reset while a cartridge is seated; the ROM's boot code autostarts the
+// cartridge the first time it enables PIA1's CB1 interrupt afterward. This
+// must fire at most once per reset -- later gameplay writes to the same
+// register (for unrelated purposes) must not re-trigger it.
+let cartridgeFirqPending = false;
 
 // Joystick state (analog range: 0 to 63, center: 31)
 let rightJoyX = 31;
@@ -224,7 +232,7 @@ function byteAt(addr) {
 function byteTo(addr, val) {
   addr &= 0xFFFF;
   val &= 0xFF;
-  
+
   // I/O & hardware registers
   if (addr >= 0xFF00) {
     if (addr >= 0xFF00 && addr <= 0xFF1F) {
@@ -1028,7 +1036,12 @@ function powerOn() {
   
   // Initialize CPU
   MC6809.init(byteTo, byteAt, null);
+  // Simulate the transient CART* pin pulse: real hardware's RC coupling
+  // latches this once per reset while a cartridge is seated. The ROM's boot
+  // code then asserts FIRQ itself the moment it enables CB1 interrupts (see
+  // pia1's onWriteControlB), autostarting the cartridge exactly once.
   MC6809.set_firq_line(false);
+  cartridgeFirqPending = cartridgeLoaded;
   MC6809.set_irq_line(false);
   
   // Set LED color
@@ -1055,7 +1068,10 @@ function systemReset() {
   }
   
   MC6809.reset();
+  // See powerOn(): the CART* pulse latches once per reset; the ROM's boot
+  // code asserts FIRQ itself via pia1's onWriteControlB.
   MC6809.set_firq_line(false);
+  cartridgeFirqPending = cartridgeLoaded;
   MC6809.set_irq_line(false);
   cpuSpeedHz = 895000;
   cassetteSavedCpuSpeedHz = null;

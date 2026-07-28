@@ -93,10 +93,12 @@
               this.ddrb = val;
             }
             break;
-          case 3:
+          case 3: {
+            const oldControlB = this.controlb;
             this.controlb = (this.controlb & 0xC0) | (val & 0x3F);
-            if (options.onWriteControlB) options.onWriteControlB(this, this.controlb);
+            if (options.onWriteControlB) options.onWriteControlB(this, oldControlB, this.controlb);
             break;
+          }
         }
       }
     };
