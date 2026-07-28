@@ -45,6 +45,17 @@ const pia1 = MC6821.create({
     const newMotor = (newControlA & 0x08) !== 0;
     if (oldMotor !== newMotor && cassetteBuffer) {
       updateTapeStatusUI(newMotor);
+      if (newMotor) {
+        if (cpuSpeedHz !== 895000) {
+          cassetteSavedCpuSpeedHz = cpuSpeedHz;
+          cpuSpeedHz = 895000;
+          updateSpeedUI();
+        }
+      } else if (cassetteSavedCpuSpeedHz !== null) {
+        cpuSpeedHz = cassetteSavedCpuSpeedHz;
+        cassetteSavedCpuSpeedHz = null;
+        updateSpeedUI();
+      }
     }
   },
   onWriteControlB: (pia, newControlB) => {
@@ -91,6 +102,13 @@ let cassetteSampleIndex = 0;
 let cassetteCycleTimer = 0;
 let cassetteInputBit = 1; // 1 = idle high
 let cassetteTapeName = "";
+
+// The ROM's CLOAD/CSAVE bit decoder measures pulse widths by counting CPU
+// cycles, calibrated only for the stock 0.895 MHz clock (exactly like real
+// CoCo hardware, where the "fast poke" also breaks cassette I/O). Stash
+// whatever speed was selected while the tape motor is engaged and restore
+// it afterward, so cassette loads work regardless of the speed slider.
+let cassetteSavedCpuSpeedHz = null;
 
 // Floppy Disk cache
 let lastLoadedDiskBuffer = null;
@@ -810,7 +828,14 @@ function emulatorFrame(timestamp) {
               cassetteBuffer = null;
               cassetteInputBit = 1;
               console.log("Cassette tape playback finished.");
-              
+
+              // Restore the speed the user had selected before the motor engaged
+              if (cassetteSavedCpuSpeedHz !== null) {
+                cpuSpeedHz = cassetteSavedCpuSpeedHz;
+                cassetteSavedCpuSpeedHz = null;
+                updateSpeedUI();
+              }
+
               // Reset UI status
               const status = document.getElementById('tape-status');
               if (status) {
@@ -990,12 +1015,13 @@ function powerOn() {
   sam.reset();
   sam.f = 2; // Default screen at page 2 ($0400)
   cpuSpeedHz = 895000;
-  
+  cassetteSavedCpuSpeedHz = null;
+
   if (speedSlider) {
     speedSlider.value = 4;
   }
   updateSpeedUI();
-  
+
   // Map reset vectors into memory
   // ROM starts at $A000. Reset vector is $FFFE-$FFFF which points to $A027 (Color BASIC entry)
   // Let's verify what the ROM reset vector actually reads. It will be loaded from colorBasicRom.
@@ -1032,6 +1058,7 @@ function systemReset() {
   MC6809.set_firq_line(false);
   MC6809.set_irq_line(false);
   cpuSpeedHz = 895000;
+  cassetteSavedCpuSpeedHz = null;
   sam.reset();
   sam.f = 2;
 
@@ -1489,7 +1516,14 @@ function ejectCartridge() {
 function ejectCassette() {
   cassetteBuffer = null;
   cassetteTapeName = "";
-  
+
+  // Restore the speed the user had selected if the tape was ejected mid-load
+  if (cassetteSavedCpuSpeedHz !== null) {
+    cpuSpeedHz = cassetteSavedCpuSpeedHz;
+    cassetteSavedCpuSpeedHz = null;
+    updateSpeedUI();
+  }
+
   const status = document.getElementById('tape-status');
   if (status) {
     status.innerText = "No Tape";
