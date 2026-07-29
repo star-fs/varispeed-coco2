@@ -9,7 +9,7 @@
   <!-- Google Fonts for Retro Digital look -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Press+Start+2P&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Press+Start+2P&family=Baloo+2:wght@700;800&family=Outfit:wght@300;400;600;700&display=swap" rel="stylesheet">
 </head>
 <body>
 
@@ -42,7 +42,7 @@
     <section class="left-section">
       <!-- CRT Monitor Bezel -->
       <div class="crt-case">
-        <div class="crt-screen-bezel">
+        <div class="crt-screen-bezel" title="Press F8 for Full Screen">
           <div class="crt-screen-container">
             <!-- Actual Emulator Canvas (Scaled to 256x192) -->
             <canvas id="coco-screen" width="256" height="192"></canvas>
@@ -51,7 +51,7 @@
             <div class="screen-glare"></div>
           </div>
         </div>
-        
+
         <!-- CRT Monitor Controls Bar -->
         <div class="crt-controls">
           <div class="power-control">
@@ -63,13 +63,16 @@
               <span class="led-label">PWR</span>
             </div>
           </div>
-          
-          <div class="badge-tandy">TANDY</div>
-          
+
+          <div class="badge-tandy">CoCoNut 2</div>
+
           <div class="action-buttons">
             <button id="btn-reset" class="btn-action red-btn" title="Reset CPU/System">RESET</button>
           </div>
         </div>
+
+        <!-- Full Screen Hint -->
+        <div class="fullscreen-hint">⛶ Press <kbd>F8</kbd> for Full Screen</div>
       </div>
 
       <!-- Virtual Keyboard Layout (Physical Color Computer 2 layout) -->

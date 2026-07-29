@@ -448,12 +448,38 @@ function getCoCoKeyPress(char) {
   return null;
 }
 
+// Full Screen Management: F11 is the browser's own chrome-level fullscreen
+// and can't be intercepted or reacted to by any page. F8 instead requests
+// the Fullscreen API on .crt-screen-bezel, the existing direct parent of
+// the CRT screen -- see the :fullscreen CSS rules for how it's letterboxed
+// via flexbox, which reliably preserves the screen's aspect ratio (unlike
+// position:fixed + explicit dimensions, which fought the browser's
+// internal top-layer fullscreen layout unpredictably).
+function toggleFullscreen() {
+  const isFullscreen = !!(document.fullscreenElement || document.webkitFullscreenElement);
+  if (!isFullscreen) {
+    const target = document.querySelector('.crt-screen-bezel');
+    if (target.requestFullscreen) target.requestFullscreen();
+    else if (target.webkitRequestFullscreen) target.webkitRequestFullscreen();
+  } else {
+    if (document.exitFullscreen) document.exitFullscreen();
+    else if (document.webkitExitFullscreen) document.webkitExitFullscreen();
+  }
+}
+
 // Host Keyboard Event Listeners
 function handleKeyDown(e) {
   if (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA') {
     return;
   }
-  
+
+  // F8 toggles full screen, independent of the emulated keyboard.
+  if (e.key === 'F8') {
+    e.preventDefault();
+    toggleFullscreen();
+    return;
+  }
+
   // Left Control is mapped as Right Joystick Fire button
   if (e.code === 'ControlLeft') {
     keyboardJoyButton = true;

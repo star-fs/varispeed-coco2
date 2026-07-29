@@ -4,6 +4,12 @@
   --bg-secondary: #131a26;
   --bg-bezel: #252a34;
   --bg-panel: rgba(19, 26, 38, 0.7);
+
+  /* Tandy Color Computer 2 case plastic */
+  --coco-beige: #ddd3b8;
+  --coco-beige-shadow: #c4b896;
+  --coco-beige-edge: #a89873;
+  --coco-beige-text: #4a4330;
   --border-color: rgba(255, 255, 255, 0.08);
   --text-primary: #e6edf3;
   --text-secondary: #90a0b8;
@@ -20,6 +26,7 @@
   --font-body: 'Outfit', sans-serif;
   --font-mono: 'Share Tech Mono', monospace;
   --font-retro: 'Press Start 2P', monospace;
+  --font-tandy-logo: 'Baloo 2', sans-serif;
 }
 
 * {
@@ -136,14 +143,14 @@ body {
 
 /* Curved CRT Monitor Case */
 .crt-case {
-  background-color: var(--bg-bezel);
+  background-color: var(--coco-beige);
   border-radius: 20px;
   padding: 25px;
-  box-shadow: 
-    inset 0 4px 6px rgba(255, 255, 255, 0.1),
-    inset 0 -10px 20px rgba(0, 0, 0, 0.6),
+  box-shadow:
+    inset 0 4px 6px rgba(255, 255, 255, 0.4),
+    inset 0 -10px 20px rgba(0, 0, 0, 0.15),
     0 15px 35px rgba(0, 0, 0, 0.5);
-  border: 4px solid #1a1e24;
+  border: 4px solid var(--coco-beige-edge);
   position: relative;
   display: flex;
   flex-direction: column;
@@ -165,6 +172,62 @@ body {
   overflow: hidden;
   aspect-ratio: 4 / 3;
   box-shadow: 0 0 20px rgba(0,0,0,0.9);
+}
+
+/* Full Screen (F8): the Fullscreen API is requested on .crt-screen-bezel
+   (the existing direct parent of .crt-screen-container), which becomes a
+   flex container that centers its child. This is the standard, reliable
+   letterboxing pattern (the same one video players use) -- flexbox
+   correctly sizes an aspect-ratio child from a definite cross-axis size,
+   unlike position:fixed + explicit dimensions, which fights unpredictably
+   with the browser's internal top-layer fullscreen layout.
+   Kept as separate rules, not a comma-joined selector list: a selector a
+   browser doesn't recognize (e.g. Firefox and :-webkit-full-screen) drops
+   the ENTIRE rule it's joined with, not just itself. */
+.crt-screen-bezel:fullscreen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.crt-screen-bezel:-webkit-full-screen {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100vw;
+  height: 100vh;
+  background: #000;
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  border-radius: 0;
+}
+
+.crt-screen-bezel:fullscreen .crt-screen-container {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 4 / 3;
+  flex-shrink: 0;
+  border-radius: 0;
+  box-shadow: none;
+}
+
+.crt-screen-bezel:-webkit-full-screen .crt-screen-container {
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  aspect-ratio: 4 / 3;
+  flex-shrink: 0;
+  border-radius: 0;
+  box-shadow: none;
 }
 
 #coco-screen {
@@ -234,10 +297,10 @@ body {
   justify-content: space-between;
   align-items: center;
   padding: 0 10px;
-  background: #1e222a;
+  background: var(--coco-beige-shadow);
   border-radius: 8px;
   height: 60px;
-  border: 1px solid rgba(255, 255, 255, 0.03);
+  border: 1px solid var(--coco-beige-edge);
 }
 
 .power-control {
@@ -303,15 +366,36 @@ body {
 .led-label {
   font-family: var(--font-mono);
   font-size: 0.65rem;
-  color: var(--text-secondary);
+  color: var(--coco-beige-text);
 }
 
 .badge-tandy {
-  font-family: var(--font-retro);
-  font-size: 0.85rem;
-  color: rgba(255, 255, 255, 0.15);
-  letter-spacing: 0.2rem;
-  font-style: italic;
+  font-family: var(--font-tandy-logo);
+  font-weight: 800;
+  font-size: 1.2rem;
+  color: rgba(158, 55, 30, 0.55);
+  letter-spacing: 0.05rem;
+  transform: skewX(-10deg);
+}
+
+.fullscreen-hint {
+  margin-top: -0.75rem;
+  text-align: center;
+  font-family: var(--font-mono);
+  font-size: 0.7rem;
+  color: var(--coco-beige-text);
+  opacity: 0.6;
+}
+
+.fullscreen-hint kbd {
+  display: inline-block;
+  font-family: var(--font-mono);
+  font-size: 0.65rem;
+  padding: 1px 6px;
+  border-radius: 4px;
+  background: var(--coco-beige-shadow);
+  border: 1px solid var(--coco-beige-edge);
+  box-shadow: 0 1px 0 var(--coco-beige-edge);
 }
 
 .action-buttons {
