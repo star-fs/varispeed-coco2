@@ -1,9 +1,14 @@
 /**
  * MC6847 Video Display Generator (VDG) Emulator Core
  *
- * Renders the CoCo 2's Text/Semigraphics 4 and PMODE 4 high-res graphics
- * modes to a 2D canvas context, based on the current SAM display-offset
- * register and the PIA1 Port B mode-select bits (A/G, CSS).
+ * Renders the CoCo 2's Text/Semigraphics 4 and CG/RG graphics modes to
+ * a 2D canvas context, based on the current SAM display-offset register and
+ * the PIA1 Port B mode-select bits (A/G, GM0-GM2, CSS). This is the chip's
+ * own digital output only: decoded VRAM bits/codes turned into pixels at
+ * the mode's native resolution, then scanned out to the physical 256x192
+ * screen. Analog composite/RF signal conditioning (NTSC artifact coloring,
+ * low-pass blur) happens downstream of the chip and is not this module's
+ * concern - see colorizeRow in the options passed to create().
  *
  * Sources and References:
  * 1. MC6847 Video Display Generator (VDG) Mode Tables
@@ -31,10 +36,14 @@
     options = options || {};
     const ram = options.ram; // Uint8Array backing store the VDG reads video memory from
 
-    const vdg = {
-      // 'monochrome', 'phase0', 'phase1' NTSC artifact coloring mode
-      ntscMode: 'monochrome',
+    // colorizeRow(bits, width, css) turns one row of raw 1bpp VDG pixel
+    // output (native mode resolution) into RGB. Owned by the caller so that
+    // analog signal conditioning (NTSC artifact colors, composite blur)
+    // lives outside the chip core. Falls back to plain digital on/off if
+    // the caller doesn't supply one.
+    const colorizeRow = options.colorizeRow || defaultColorizeRow;
 
+    const vdg = {
       // Renders the current frame. displayStart is the byte offset into ram
       // (from SAM.f), pia1PortB is PIA1's Port B register (GM0-GM2, A/G, CSS).
       render(ctx, displayStart, pia1PortB) {
@@ -43,16 +52,27 @@
         const gm = (pia1PortB & 0x70) >> 4;     // GM0-GM2: graphics resolution/color-depth select
 
         if (ag === 1) {
-          renderGraphicsMode(this, ctx, displayStart, css, gm);
+          renderGraphicsMode(ctx, displayStart, css, gm);
         } else {
-          renderTextMode(this, ctx, displayStart, css);
+          renderTextMode(ctx, displayStart, css);
         }
       }
     };
 
+    function defaultColorizeRow(bits, width, css) {
+      const fgRGB = css ? [238, 238, 238] : [0, 255, 0];
+      const bgRGB = [0, 17, 0];
+      const row = new Uint8Array(width * 3);
+      for (let x = 0; x < width; x++) {
+        const rgb = bits[x] ? fgRGB : bgRGB;
+        row[x * 3] = rgb[0]; row[x * 3 + 1] = rgb[1]; row[x * 3 + 2] = rgb[2];
+      }
+      return row;
+    }
+
     // Text Mode render
     // Screen size: 32 columns * 16 rows. Cell resolution: 8 * 12.
-    function renderTextMode(vdg, ctx, displayStart, css) {
+    function renderTextMode(ctx, displayStart, css) {
       ctx.fillStyle = '#001100'; // Background border
       ctx.fillRect(0, 0, 256, 192);
 
@@ -137,26 +157,21 @@
       { width: 256, rows: 192, bpp: 1 }, // 111: RG6 (PMODE 4)
     ];
 
-    // Graphics Mode render. 2-color (RG*) modes emulate analog NTSC RF /
-    // composite artifacts via horizontal Gaussian blur over pixel-pair
-    // artifact generation. 4-color (CG*) modes use the VDG's direct color
-    // set instead, since they don't need artifact-based faking.
-    function renderGraphicsMode(vdg, ctx, displayStart, css, gm) {
+    // Graphics Mode render. Decodes VRAM into raw pixel values at each
+    // mode's native resolution, hands 1bpp (RG*) rows to colorizeRow for
+    // coloring (digital on/off by default, or whatever signal conditioning
+    // the caller supplies), and scans the result out to the physical
+    // 256x192 screen. 4-color (CG*) modes are colored directly here since
+    // their output is deterministic VDG chip behavior, not something an
+    // analog signal stage alters.
+    function renderGraphicsMode(ctx, displayStart, css, gm) {
       const { width, rows, bpp } = GRAPHICS_MODES[gm];
       const bytesPerRow = (width * bpp) / 8;
       const hScale = 256 / width;
       const vScale = 192 / rows;
-      const ntscMode = vdg.ntscMode;
 
       const imgData = ctx.createImageData(256, 192);
       const data = imgData.data;
-
-      const fgRGB = css ? [238, 238, 238] : [0, 255, 0];
-      const bgRGB = [0, 17, 0];
-
-      // Authentic NTSC Chrominance artifacts (RG modes only)
-      const blueRGB = [40, 100, 255];
-      const orangeRGB = [255, 100, 0];
 
       // CG modes' direct 4-color set, selected by CSS
       const cgPalette = css
@@ -164,43 +179,23 @@
         : [[0, 255, 0], [255, 255, 0], [0, 0, 255], [255, 0, 0]];        // Green, Yellow, Blue, Red
 
       // Temporary buffers, all at native mode resolution except the final scanline
-      const srcRow = new Uint8Array(width * 3);
-      const blurredRow = new Uint8Array(width * 3);
+      const bits = bpp === 1 ? new Uint8Array(width) : null;
+      const cgRow = bpp === 2 ? new Uint8Array(width * 3) : null;
       const scanline = new Uint8Array(256 * 3);
 
       for (let srcY = 0; srcY < rows; srcY++) {
-        // 1. Decode this source row's RGB values at native mode resolution
+        let coloredRow;
+
+        // 1. Decode this source row at native mode resolution
         if (bpp === 1) {
           for (let xByte = 0; xByte < bytesPerRow; xByte++) {
             const addr = displayStart + srcY * bytesPerRow + xByte;
             const val = ram[addr];
-
-            for (let bit = 0; bit < 8; bit += 2) {
-              const x0 = xByte * 8 + bit;
-              const x1 = x0 + 1;
-
-              const p0 = (val & (0x80 >> bit)) !== 0;
-              const p1 = (val & (0x80 >> (bit + 1))) !== 0;
-
-              let rgb0, rgb1;
-              if (ntscMode === 'monochrome') {
-                rgb0 = p0 ? fgRGB : bgRGB;
-                rgb1 = p1 ? fgRGB : bgRGB;
-              } else {
-                // NTSC Artifact mode: combine adjacent bits into artifact colors (2-pixel blocks)
-                const code = (p0 ? 2 : 0) | (p1 ? 1 : 0);
-                let rgb;
-                if (code === 0) rgb = bgRGB;
-                else if (code === 3) rgb = fgRGB;
-                else if (code === 2) rgb = (ntscMode === 'phase0') ? blueRGB : orangeRGB;
-                else rgb = (ntscMode === 'phase0') ? orangeRGB : blueRGB;
-                rgb0 = rgb1 = rgb;
-              }
-
-              srcRow[x0 * 3] = rgb0[0]; srcRow[x0 * 3 + 1] = rgb0[1]; srcRow[x0 * 3 + 2] = rgb0[2];
-              srcRow[x1 * 3] = rgb1[0]; srcRow[x1 * 3 + 1] = rgb1[1]; srcRow[x1 * 3 + 2] = rgb1[2];
+            for (let bit = 0; bit < 8; bit++) {
+              bits[xByte * 8 + bit] = (val & (0x80 >> bit)) ? 1 : 0;
             }
           }
+          coloredRow = colorizeRow(bits, width, css);
         } else {
           for (let xByte = 0; xByte < bytesPerRow; xByte++) {
             const addr = displayStart + srcY * bytesPerRow + xByte;
@@ -210,38 +205,21 @@
               const code = (val >> (6 - pix * 2)) & 0x03;
               const rgb = cgPalette[code];
               const x = xByte * 4 + pix;
-              srcRow[x * 3] = rgb[0]; srcRow[x * 3 + 1] = rgb[1]; srcRow[x * 3 + 2] = rgb[2];
+              cgRow[x * 3] = rgb[0]; cgRow[x * 3 + 1] = rgb[1]; cgRow[x * 3 + 2] = rgb[2];
             }
           }
+          coloredRow = cgRow;
         }
 
-        // 2. Apply the horizontal analog low-pass filter, only meaningful for RG artifact colors
-        const applyBlur = (bpp === 1 && ntscMode !== 'monochrome');
-        for (let x = 0; x < width; x++) {
-          const xc = x * 3;
-          if (!applyBlur) {
-            blurredRow[xc] = srcRow[xc];
-            blurredRow[xc + 1] = srcRow[xc + 1];
-            blurredRow[xc + 2] = srcRow[xc + 2];
-            continue;
-          }
-          // 3-tap horizontal Gaussian filter [0.25, 0.50, 0.25] to simulate RF composite video warmth
-          const xm1 = (x > 0 ? x - 1 : x) * 3;
-          const xp1 = (x < width - 1 ? x + 1 : x) * 3;
-          blurredRow[xc]     = (0.25 * srcRow[xm1]     + 0.5 * srcRow[xc]     + 0.25 * srcRow[xp1])     | 0;
-          blurredRow[xc + 1] = (0.25 * srcRow[xm1 + 1] + 0.5 * srcRow[xc + 1] + 0.25 * srcRow[xp1 + 1]) | 0;
-          blurredRow[xc + 2] = (0.25 * srcRow[xm1 + 2] + 0.5 * srcRow[xc + 2] + 0.25 * srcRow[xp1 + 2]) | 0;
-        }
-
-        // 3. Expand horizontally to the 256px-wide physical scanline
+        // 2. Expand horizontally to the 256px-wide physical scanline
         for (let dx = 0; dx < 256; dx++) {
           const sx = (dx / hScale) | 0;
-          scanline[dx * 3]     = blurredRow[sx * 3];
-          scanline[dx * 3 + 1] = blurredRow[sx * 3 + 1];
-          scanline[dx * 3 + 2] = blurredRow[sx * 3 + 2];
+          scanline[dx * 3]     = coloredRow[sx * 3];
+          scanline[dx * 3 + 1] = coloredRow[sx * 3 + 1];
+          scanline[dx * 3 + 2] = coloredRow[sx * 3 + 2];
         }
 
-        // 4. Repeat this scanline vertically to fill the 192-line physical screen
+        // 3. Repeat this scanline vertically to fill the 192-line physical screen
         for (let r = 0; r < vScale; r++) {
           const rowOffset = (srcY * vScale + r) * 256 * 4;
           for (let x = 0; x < 256; x++) {

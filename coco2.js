@@ -81,7 +81,62 @@ const sam = MC6883.create({
 });
 
 // VDG (Video Display Generator)
-const vdg = MC6847.create({ ram });
+// colorizeGraphicsRow (defined below) supplies the post-chip analog signal
+// conditioning - the VDG core itself only emits raw digital pixel bits.
+const vdg = MC6847.create({ ram, colorizeRow: colorizeGraphicsRow });
+
+// NTSC composite signal conditioning state: 'monochrome', 'phase0', 'phase1'
+let ntscMode = 'monochrome';
+
+// Turns one row of raw 1bpp VDG pixel output (native mode resolution) into
+// RGB. This is analog composite/RF signal conditioning that happens to the
+// VDG's clean digital output on its way to the screen - it does not live in
+// the VDG chip core (mc6847.js) itself.
+function colorizeGraphicsRow(bits, width, css) {
+  const fgRGB = css ? [238, 238, 238] : [0, 255, 0];
+  const bgRGB = [0, 17, 0];
+
+  const row = new Uint8Array(width * 3);
+
+  if (ntscMode === 'monochrome') {
+    for (let x = 0; x < width; x++) {
+      const rgb = bits[x] ? fgRGB : bgRGB;
+      row[x * 3] = rgb[0]; row[x * 3 + 1] = rgb[1]; row[x * 3 + 2] = rgb[2];
+    }
+    return row;
+  }
+
+  // Authentic NTSC Chrominance artifacts: adjacent bit pairs combine into a
+  // single 2-pixel-wide artifact color on the composite signal.
+  const blueRGB = [40, 100, 255];
+  const orangeRGB = [255, 100, 0];
+
+  for (let x = 0; x < width; x += 2) {
+    const p0 = bits[x], p1 = bits[x + 1];
+    const code = (p0 ? 2 : 0) | (p1 ? 1 : 0);
+
+    let rgb;
+    if (code === 0) rgb = bgRGB;
+    else if (code === 3) rgb = fgRGB;
+    else if (code === 2) rgb = (ntscMode === 'phase0') ? blueRGB : orangeRGB;
+    else rgb = (ntscMode === 'phase0') ? orangeRGB : blueRGB;
+
+    row[x * 3] = rgb[0]; row[x * 3 + 1] = rgb[1]; row[x * 3 + 2] = rgb[2];
+    row[(x + 1) * 3] = rgb[0]; row[(x + 1) * 3 + 1] = rgb[1]; row[(x + 1) * 3 + 2] = rgb[2];
+  }
+
+  // 3-tap horizontal Gaussian filter [0.25, 0.50, 0.25] to simulate RF composite video warmth
+  const blurred = new Uint8Array(width * 3);
+  for (let x = 0; x < width; x++) {
+    const xc = x * 3;
+    const xm1 = (x > 0 ? x - 1 : x) * 3;
+    const xp1 = (x < width - 1 ? x + 1 : x) * 3;
+    blurred[xc]     = (0.25 * row[xm1]     + 0.5 * row[xc]     + 0.25 * row[xp1])     | 0;
+    blurred[xc + 1] = (0.25 * row[xm1 + 1] + 0.5 * row[xc + 1] + 0.25 * row[xp1 + 1]) | 0;
+    blurred[xc + 2] = (0.25 * row[xm1 + 2] + 0.5 * row[xc + 2] + 0.25 * row[xp1 + 2]) | 0;
+  }
+  return blurred;
+}
 
 // Web Audio API State for 6-bit DAC Emulation
 let audioCtx = null;
@@ -1663,16 +1718,16 @@ window.addEventListener('DOMContentLoaded', () => {
   // NTSC Artifact mode selector
   document.getElementById('btn-ntsc-mode').addEventListener('click', () => {
     const btn = document.getElementById('btn-ntsc-mode');
-    if (vdg.ntscMode === 'monochrome') {
-      vdg.ntscMode = 'phase0';
+    if (ntscMode === 'monochrome') {
+      ntscMode = 'phase0';
       btn.innerText = "📺 NTSC: Phase 0";
       btn.className = "btn-primary btn-sm";
-    } else if (vdg.ntscMode === 'phase0') {
-      vdg.ntscMode = 'phase1';
+    } else if (ntscMode === 'phase0') {
+      ntscMode = 'phase1';
       btn.innerText = "📺 NTSC: Phase 1";
       btn.className = "btn-primary btn-sm";
     } else {
-      vdg.ntscMode = 'monochrome';
+      ntscMode = 'monochrome';
       btn.innerText = "📺 NTSC: Off";
       btn.className = "btn-secondary btn-sm";
     }
