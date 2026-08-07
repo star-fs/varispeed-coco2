@@ -43,16 +43,25 @@
     // the caller doesn't supply one.
     const colorizeRow = options.colorizeRow || defaultColorizeRow;
 
+    // blurRow(row, width, gm) optionally softens an already-decoded RGB row
+    // (native mode resolution) for CG (2bpp) modes, which pick discrete
+    // colors directly and so skip colorizeRow entirely. gm is the raw
+    // GM0-GM2 mode index, letting the caller vary the effect per submode.
+    // Purely cosmetic signal conditioning owned by the caller; no-op if not
+    // supplied.
+    const blurRow = options.blurRow || (row => row);
+
     const vdg = {
       // Renders the current frame. displayStart is the byte offset into ram
-      // (from SAM.f), pia1PortB is PIA1's Port B register (GM0-GM2, A/G, CSS).
-      render(ctx, displayStart, pia1PortB) {
+      // (from SAM.f), pia1PortB is PIA1's Port B register (GM0-GM2, A/G, CSS),
+      // samV is the SAM's own V0-V2 VDG-mode-select bits.
+      render(ctx, displayStart, pia1PortB, samV) {
         const css = (pia1PortB & 0x08) ? 1 : 0; // Color Set Select
         const ag = (pia1PortB & 0x80) ? 1 : 0;  // Alpha/Graphics mode select
         const gm = (pia1PortB & 0x70) >> 4;     // GM0-GM2: graphics resolution/color-depth select
 
         if (ag === 1) {
-          renderGraphicsMode(ctx, displayStart, css, gm);
+          renderGraphicsMode(ctx, displayStart, css, gm, samV);
         } else {
           renderTextMode(ctx, displayStart, css);
         }
@@ -149,23 +158,49 @@
     const GRAPHICS_MODES = [
       { width: 64,  rows: 64,  bpp: 2 }, // 000: CG1
       { width: 128, rows: 64,  bpp: 1 }, // 001: RG1
-      { width: 128, rows: 96,  bpp: 2 }, // 010: CG2
+      { width: 128, rows: 64,  bpp: 2 }, // 010: CG2
       { width: 128, rows: 96,  bpp: 1 }, // 011: RG2
-      { width: 128, rows: 192, bpp: 2 }, // 100: CG3
+      { width: 128, rows: 96,  bpp: 2 }, // 100: CG3
       { width: 128, rows: 192, bpp: 1 }, // 101: RG3
-      { width: 256, rows: 192, bpp: 2 }, // 110: CG6
+      { width: 128, rows: 192, bpp: 2 }, // 110: CG6
       { width: 256, rows: 192, bpp: 1 }, // 111: RG6 (PMODE 4)
+    ];
+
+    // The SAM (not the VDG/PIA1) actually generates the video address
+    // sequence, and its own V0-V2 mode bits independently set how many
+    // scan lines each VRAM row is held for before the address advances -
+    // i.e. the true unique row count. This is why G1C/G1R share a V value
+    // (both 64 rows) and G6R/G6C share another (both 192 rows): the V bits
+    // group by vertical timing only, orthogonal to the CG/RG pixel format
+    // PIA1's GM bits select. Software is expected to keep both in sync, but
+    // some games deliberately pair a fine-grained GM decode format with a
+    // coarser SAM row count to halve their VRAM footprint (e.g. Megabug:
+    // GM selects RG6's 256-wide decode while SAM.v selects G3C's 96-row
+    // timing, doubling each real row to fill 192 lines) - so the row count
+    // must come from here, not from GRAPHICS_MODES, whenever SAM.v is
+    // available.
+    const SAM_V_ROWS = [
+      null, // 000: AI/AE/S4/S6 (alphanumeric/semigraphics - not a graphics row count)
+      64,   // 001: G1C/G1R
+      64,   // 010: G2C
+      96,   // 011: G2R
+      96,   // 100: G3C
+      192,  // 101: G3R
+      192,  // 110: G6R/G6C
+      null, // 111: DMA (not a graphics row count)
     ];
 
     // Graphics Mode render. Decodes VRAM into raw pixel values at each
     // mode's native resolution, hands 1bpp (RG*) rows to colorizeRow for
     // coloring (digital on/off by default, or whatever signal conditioning
     // the caller supplies), and scans the result out to the physical
-    // 256x192 screen. 4-color (CG*) modes are colored directly here since
-    // their output is deterministic VDG chip behavior, not something an
-    // analog signal stage alters.
-    function renderGraphicsMode(ctx, displayStart, css, gm) {
-      const { width, rows, bpp } = GRAPHICS_MODES[gm];
+    // 256x192 screen. 4-color (CG*) modes pick their colors directly here
+    // (that part is deterministic VDG chip behavior), then pass the result
+    // through blurRow for the same optional cosmetic signal conditioning
+    // as RG modes.
+    function renderGraphicsMode(ctx, displayStart, css, gm, samV) {
+      const { width, bpp } = GRAPHICS_MODES[gm];
+      const rows = (samV != null && SAM_V_ROWS[samV] != null) ? SAM_V_ROWS[samV] : GRAPHICS_MODES[gm].rows;
       const bytesPerRow = (width * bpp) / 8;
       const hScale = 256 / width;
       const vScale = 192 / rows;
@@ -208,7 +243,7 @@
               cgRow[x * 3] = rgb[0]; cgRow[x * 3 + 1] = rgb[1]; cgRow[x * 3 + 2] = rgb[2];
             }
           }
-          coloredRow = cgRow;
+          coloredRow = blurRow(cgRow, width, gm);
         }
 
         // 2. Expand horizontally to the 256px-wide physical scanline

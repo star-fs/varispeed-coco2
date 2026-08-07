@@ -81,12 +81,29 @@ const sam = MC6883.create({
 });
 
 // VDG (Video Display Generator)
-// colorizeGraphicsRow (defined below) supplies the post-chip analog signal
-// conditioning - the VDG core itself only emits raw digital pixel bits.
-const vdg = MC6847.create({ ram, colorizeRow: colorizeGraphicsRow });
+// colorizeGraphicsRow/blurCgRow (defined below) supply the post-chip analog
+// signal conditioning - the VDG core itself only emits raw digital pixels.
+const vdg = MC6847.create({ ram, colorizeRow: colorizeGraphicsRow, blurRow: blurCgRow });
 
-// NTSC composite signal conditioning state: 'monochrome', 'phase0', 'phase1'
-let ntscMode = 'monochrome';
+// NTSC composite signal conditioning state: 'monochrome', 'phase0', 'phase1'.
+// Defaults to 'phase1' to match the button's initial label/style in index.html.
+let ntscMode = 'phase1';
+
+// 3-tap horizontal Gaussian filter [0.25, 0.50, 0.25] to simulate RF composite
+// video warmth/bandwidth-limited chroma bleed on an RGB row (native mode
+// resolution, 3 bytes/pixel).
+function blurRowRGB(row, width) {
+  const blurred = new Uint8Array(width * 3);
+  for (let x = 0; x < width; x++) {
+    const xc = x * 3;
+    const xm1 = (x > 0 ? x - 1 : x) * 3;
+    const xp1 = (x < width - 1 ? x + 1 : x) * 3;
+    blurred[xc]     = (0.25 * row[xm1]     + 0.5 * row[xc]     + 0.25 * row[xp1])     | 0;
+    blurred[xc + 1] = (0.25 * row[xm1 + 1] + 0.5 * row[xc + 1] + 0.25 * row[xp1 + 1]) | 0;
+    blurred[xc + 2] = (0.25 * row[xm1 + 2] + 0.5 * row[xc + 2] + 0.25 * row[xp1 + 2]) | 0;
+  }
+  return blurred;
+}
 
 // Turns one row of raw 1bpp VDG pixel output (native mode resolution) into
 // RGB. This is analog composite/RF signal conditioning that happens to the
@@ -125,17 +142,21 @@ function colorizeGraphicsRow(bits, width, css) {
     row[(x + 1) * 3] = rgb[0]; row[(x + 1) * 3 + 1] = rgb[1]; row[(x + 1) * 3 + 2] = rgb[2];
   }
 
-  // 3-tap horizontal Gaussian filter [0.25, 0.50, 0.25] to simulate RF composite video warmth
-  const blurred = new Uint8Array(width * 3);
-  for (let x = 0; x < width; x++) {
-    const xc = x * 3;
-    const xm1 = (x > 0 ? x - 1 : x) * 3;
-    const xp1 = (x < width - 1 ? x + 1 : x) * 3;
-    blurred[xc]     = (0.25 * row[xm1]     + 0.5 * row[xc]     + 0.25 * row[xp1])     | 0;
-    blurred[xc + 1] = (0.25 * row[xm1 + 1] + 0.5 * row[xc + 1] + 0.25 * row[xp1 + 1]) | 0;
-    blurred[xc + 2] = (0.25 * row[xm1 + 2] + 0.5 * row[xc + 2] + 0.25 * row[xp1 + 2]) | 0;
-  }
-  return blurred;
+  return blurRowRGB(row, width);
+}
+
+// CG (color graphics) modes already output discrete VDG colors directly -
+// there's no monochrome bitmap for a composite decoder to reinterpret, so
+// real hardware wouldn't show artifact colors here. But the same bandwidth
+// limiting that produces artifact colors on RG modes also softens/bleeds
+// CG modes' sharp pixel edges on a real TV, so still apply the blur when an
+// NTSC phase is selected, purely for visual consistency with RG modes.
+// Skip it for CG6 (gm 6): at 128 native columns stretched 2x to fill the
+// screen, the blur just muddies already-large pixels rather than adding
+// warmth.
+function blurCgRow(row, width, gm) {
+  if (ntscMode === 'monochrome' || gm === 6) return row;
+  return blurRowRGB(row, width);
 }
 
 // Web Audio API State for 6-bit DAC Emulation
@@ -144,7 +165,7 @@ let audioNode = null;
 let audioQueue = [];
 const AUDIO_SAMPLE_RATE = 44100;
 let audioCycleTimer = 0;
-let audioEnabled = false;
+let audioEnabled = true; // matches the Unmute button's initial label/style in index.html
 
 // Audio filter state variables for analog emulation (LPF + HPF)
 let audioLPFPrev = 0.0;
@@ -644,7 +665,25 @@ function handleKeyUp(e) {
 // Virtual Screen Render Engine
 // Emulates MC6847 VDG output based on PIA and SAM configurations
 function renderScreen() {
-  vdg.render(ctx, sam.f * 512, pia1.portb);
+  vdg.render(ctx, sam.f * 512, pia1.portb, sam.v);
+  if (ntscMode === 'monochrome') desaturateScreen();
+}
+
+// Simulates a black-and-white CoCo monitor/TV. Real NTSC composite video
+// carries color as a subcarrier modulated on top of a luminance signal; a
+// B&W set decodes only the luminance and discards the color entirely. This
+// is applied once, uniformly, after the VDG's own render - covering text,
+// semigraphics, CG, and RG modes alike - the same way a real B&W set would
+// desaturate whatever the chip drew, rather than picking gray equivalents
+// mode-by-mode.
+function desaturateScreen() {
+  const imgData = ctx.getImageData(0, 0, 256, 192);
+  const data = imgData.data;
+  for (let i = 0; i < data.length; i += 4) {
+    const luma = (0.299 * data[i] + 0.587 * data[i + 1] + 0.114 * data[i + 2]) | 0;
+    data[i] = luma; data[i + 1] = luma; data[i + 2] = luma;
+  }
+  ctx.putImageData(imgData, 0, 0);
 }
 
 // Vertical Sync interrupt timer (60 Hz)
@@ -1709,6 +1748,14 @@ window.addEventListener('DOMContentLoaded', () => {
       powerOff();
     } else {
       powerOn();
+      // Audio defaults to enabled, but browsers require a user gesture
+      // before an AudioContext can actually produce sound - Power is the
+      // first gesture most users make, so unlock it here rather than
+      // making them separately click Unmute.
+      if (audioEnabled) {
+        if (!audioCtx) initAudio();
+        if (audioCtx && audioCtx.state === 'suspended') audioCtx.resume();
+      }
     }
   });
   document.getElementById('btn-reset').addEventListener('click', () => {
