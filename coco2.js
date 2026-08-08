@@ -831,7 +831,10 @@ function updateTyperProgress() {
 function emulatorFrame(timestamp) {
   if (!isRunning) return;
   
-  // Poll gamepad input
+  // Poll gamepad input. A connected USB gamepad drives the LEFT joystick
+  // (Player 1 on real CoCo hardware's port labeling), leaving the keyboard
+  // free to drive the RIGHT joystick (Player 2) - so one person can play a
+  // 2-player game solo with gamepad + keyboard.
   const gamepads = navigator.getGamepads ? navigator.getGamepads() : [];
   let gp = null;
   for (let i = 0; i < gamepads.length; i++) {
@@ -840,37 +843,33 @@ function emulatorFrame(timestamp) {
       break;
     }
   }
-  
+
   if (gp) {
     // Left Stick axes: 0 (X), 1 (Y)
     let gpX = gp.axes[0] || 0.0;
     let gpY = gp.axes[1] || 0.0;
-    
+
     const deadzone = 0.15;
-    if (Math.abs(gpX) > deadzone) {
-      rightJoyX = Math.round(31.5 + gpX * 31.5);
-    } else {
-      rightJoyX = keyboardJoyX;
-    }
-    
-    if (Math.abs(gpY) > deadzone) {
-      rightJoyY = Math.round(31.5 + gpY * 31.5);
-    } else {
-      rightJoyY = keyboardJoyY;
-    }
-    
+    leftJoyX = Math.abs(gpX) > deadzone ? Math.round(31.5 + gpX * 31.5) : 31;
+    leftJoyY = Math.abs(gpY) > deadzone ? Math.round(31.5 + gpY * 31.5) : 31;
+
     // X button (index 2) or A/Cross button (index 0) on standard layout
     let gpButton = false;
     if (gp.buttons[2] && gp.buttons[2].pressed) gpButton = true;
     if (gp.buttons[0] && gp.buttons[0].pressed) gpButton = true;
-    
-    rightJoyButton = gpButton || keyboardJoyButton;
+
+    leftJoyButton = gpButton;
   } else {
-    // No gamepad connected, fall back to keyboard controls
-    rightJoyX = keyboardJoyX;
-    rightJoyY = keyboardJoyY;
-    rightJoyButton = keyboardJoyButton;
+    // No gamepad connected: left joystick stays centered/unpressed.
+    leftJoyX = 31;
+    leftJoyY = 31;
+    leftJoyButton = false;
   }
+
+  // Right joystick is always driven by the keyboard-simulated joystick.
+  rightJoyX = keyboardJoyX;
+  rightJoyY = keyboardJoyY;
+  rightJoyButton = keyboardJoyButton;
   
   if (lastTime === 0) lastTime = timestamp;
   let elapsedMs = timestamp - lastTime;
